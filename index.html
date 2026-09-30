@@ -7,12 +7,25 @@
     <style>
         body { margin: 0; padding: 0; background-color: #0d0f18; color: white; font-family: monospace; overflow: hidden; }
         
-        #lobby { padding: 20px; max-width: 650px; margin: 0 auto; margin-top: 50px; }
-        .stat-row { display: flex; justify-content: space-between; margin-bottom: 15px; align-items: center; }
-        button { background: #e94560; color: white; border: none; padding: 10px 15px; cursor: pointer; border-radius: 5px; }
+        #lobby { padding: 20px; max-width: 650px; margin: 0 auto; margin-top: 50px; background: rgba(0,0,0,0.5); border: 2px solid #444; border-radius: 10px; }
+        
+        /* New Visual Points Display */
+        #points-container { margin-bottom: 25px; text-align: center; }
+        #slots-text { font-size: 1.2em; font-weight: bold; margin-bottom: 10px; color: #ffcc00; }
+        #points-visual { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; }
+        .point-block { width: 18px; height: 18px; background: #222; border: 1px solid #444; border-radius: 2px; transition: all 0.1s; }
+        .point-block.used { background: #e94560; border-color: #ff4757; box-shadow: 0 0 8px #ff4757; }
+        
+        /* Slider Styles */
+        .stat-row { display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center; }
+        .stat-label { font-size: 1.1em; flex: 1; }
+        .stat-control { display: flex; align-items: center; gap: 15px; flex: 1; justify-content: flex-end; }
+        .stat-slider { width: 100%; max-width: 200px; accent-color: #e94560; cursor: pointer; }
+        .stat-val { font-size: 1.3em; font-weight: bold; width: 30px; text-align: right; color: white; }
+
+        button { background: #e94560; color: white; border: none; padding: 12px 15px; cursor: pointer; border-radius: 5px; font-weight: bold; }
         button:hover { background: #d03050; }
-        .stat-btn { font-weight: bold; width: 35px; height: 35px; padding: 0; }
-        #deploy-btn { width: 100%; font-size: 1.2em; margin-top: 20px; }
+        #deploy-btn { width: 100%; font-size: 1.4em; margin-top: 20px; padding: 15px; }
         
         #gameCanvas { 
             display: none; 
@@ -41,7 +54,8 @@
         .dev-row input[type="checkbox"] { transform: scale(1.5); accent-color: lime; cursor: pointer; }
         
         .dev-actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
-        .dev-actions button { flex: 1 1 45%; font-weight: bold; padding: 8px; color: black; }
+        .dev-actions button { flex: 1 1 45%; font-weight: bold; padding: 8px; color: black; background: lime; }
+        .dev-actions button:hover { background: #00cc00; }
         .admin-btn { background: #ffaa00 !important; flex: 1 1 100% !important; margin-bottom: 5px; }
         .admin-btn:hover { background: #e69900 !important; }
         .admin-clear { background: #ff4444 !important; color: white !important; }
@@ -55,47 +69,46 @@
 <body>
 
     <div id="lobby">
-        <h1>Engineering Phase</h1>
-        <p>Power Slots Available: <span id="slots">20</span>/25 (Max 10 per stat)</p>
+        <h1 style="text-align: center; margin-top: 0;">Engineering Phase</h1>
+        
+        <div id="points-container">
+            <div id="slots-text">20 Points Remaining</div>
+            <div id="points-visual"></div>
+        </div>
         
         <div class="stat-row">
-            <span>Chassis Mobility (Speed)</span>
-            <div>
-                <button class="stat-btn" onclick="changeStat('speed', -1)">-</button>
-                <span id="val-speed" style="display: inline-block; width: 30px; text-align: center; font-size: 1.2em;">1</span>
-                <button class="stat-btn" onclick="changeStat('speed', 1)">+</button>
+            <span class="stat-label">Chassis Mobility (Speed)</span>
+            <div class="stat-control">
+                <input type="range" id="stat-speed" class="stat-slider" min="1" max="10" value="1" oninput="handleStatChange('speed')">
+                <span id="val-speed" class="stat-val">1</span>
             </div>
         </div>
         <div class="stat-row">
-            <span>Pneumatic Pressure (Velocity)</span>
-            <div>
-                <button class="stat-btn" onclick="changeStat('velocity', -1)">-</button>
-                <span id="val-velocity" style="display: inline-block; width: 30px; text-align: center; font-size: 1.2em;">1</span>
-                <button class="stat-btn" onclick="changeStat('velocity', 1)">+</button>
+            <span class="stat-label">Pneumatic Pressure (Velocity)</span>
+            <div class="stat-control">
+                <input type="range" id="stat-velocity" class="stat-slider" min="1" max="10" value="1" oninput="handleStatChange('velocity')">
+                <span id="val-velocity" class="stat-val">1</span>
             </div>
         </div>
         <div class="stat-row">
-            <span>Emitter Cycle (Fire Rate Cooldown)</span>
-            <div>
-                <button class="stat-btn" onclick="changeStat('fireRate', -1)">-</button>
-                <span id="val-fireRate" style="display: inline-block; width: 30px; text-align: center; font-size: 1.2em;">1</span>
-                <button class="stat-btn" onclick="changeStat('fireRate', 1)">+</button>
+            <span class="stat-label">Emitter Cycle (Fire Rate)</span>
+            <div class="stat-control">
+                <input type="range" id="stat-fireRate" class="stat-slider" min="1" max="10" value="1" oninput="handleStatChange('fireRate')">
+                <span id="val-fireRate" class="stat-val">1</span>
             </div>
         </div>
         <div class="stat-row">
-            <span>Asset Capacity (Dodgeball limit)</span>
-            <div>
-                <button class="stat-btn" onclick="changeStat('capacity', -1)">-</button>
-                <span id="val-capacity" style="display: inline-block; width: 30px; text-align: center; font-size: 1.2em;">1</span>
-                <button class="stat-btn" onclick="changeStat('capacity', 1)">+</button>
+            <span class="stat-label">Asset Capacity (Ammo Limit)</span>
+            <div class="stat-control">
+                <input type="range" id="stat-capacity" class="stat-slider" min="1" max="10" value="1" oninput="handleStatChange('capacity')">
+                <span id="val-capacity" class="stat-val">1</span>
             </div>
         </div>
         <div class="stat-row">
-            <span>Battery Reserves (Energy limit)</span>
-            <div>
-                <button class="stat-btn" onclick="changeStat('battery', -1)">-</button>
-                <span id="val-battery" style="display: inline-block; width: 30px; text-align: center; font-size: 1.2em;">1</span>
-                <button class="stat-btn" onclick="changeStat('battery', 1)">+</button>
+            <span class="stat-label">Battery Reserves (Energy)</span>
+            <div class="stat-control">
+                <input type="range" id="stat-battery" class="stat-slider" min="1" max="10" value="1" oninput="handleStatChange('battery')">
+                <span id="val-battery" class="stat-val">1</span>
             </div>
         </div>
 
@@ -145,14 +158,14 @@
         let adminTriggerId = null;
         let adminHasSpawned = false;
 
-        // --- THE "OFFICIAL" DEFAULTS ---
+        // --- DEV CONSOLE CONFIG ---
         const gameConfigDefaults = {
             centerWallActive: true,     
             adminSpawnCount: 15,        
             adminSpawnVelocity: 5.0,    
             powerFlightTime: 800,       
             frictionRetained: 0.98,
-            wallBounceRetained: 0.85,   // NEW: Bleeds 15% speed every time a ball hits a wall
+            wallBounceRetained: 0.85,   
             pickupMaxSpeed: 3.5,        
             funnelActiveSpeed: 2.5,     
             funnelGravity: 0.05,        
@@ -274,20 +287,53 @@
             }
         });
 
+
+        // --- LOBBY STAT ALLOCATION (SMART SLIDERS) ---
         const MAX_POINTS = 25;
-        const MAX_STAT_VALUE = 10;
-        let stats = { speed: 1, velocity: 1, fireRate: 1, capacity: 1, battery: 1 };
+        const stats = { speed: 1, velocity: 1, fireRate: 1, capacity: 1, battery: 1 };
         
-        window.changeStat = function(stat, change) {
-            let totalUsed = stats.speed + stats.velocity + stats.fireRate + stats.capacity + stats.battery;
-            if (change > 0 && totalUsed >= MAX_POINTS) return;
-            if (change > 0 && stats[stat] >= MAX_STAT_VALUE) return;
-            if (stats[stat] + change < 1) return; 
+        window.handleStatChange = function(changedStat) {
+            let slider = document.getElementById(`stat-${changedStat}`);
+            let requestedValue = parseInt(slider.value);
+
+            // Calculate sum of all OTHER stats
+            let sumOthers = 0;
+            for (let key in stats) {
+                if (key !== changedStat) sumOthers += stats[key];
+            }
+
+            // Max allowed for this stat based on remaining budget (capped at 10)
+            let maxAllowed = Math.min(10, MAX_POINTS - sumOthers);
+
+            // If they try to drag past the budget, forcefully pull the slider back
+            if (requestedValue > maxAllowed) {
+                requestedValue = maxAllowed;
+                slider.value = requestedValue;
+            }
+
+            stats[changedStat] = requestedValue;
+            document.getElementById(`val-${changedStat}`).innerText = requestedValue;
             
-            stats[stat] += change;
-            document.getElementById(`val-${stat}`).innerText = stats[stat];
-            document.getElementById('slots').innerText = MAX_POINTS - (totalUsed + change);
+            updatePointsVisual();
         }
+
+        function updatePointsVisual() {
+            let used = stats.speed + stats.velocity + stats.fireRate + stats.capacity + stats.battery;
+            let left = MAX_POINTS - used;
+            document.getElementById('slots-text').innerText = `${left} Point${left !== 1 ? 's' : ''} Remaining`;
+            
+            let container = document.getElementById('points-visual');
+            container.innerHTML = '';
+            for(let i = 0; i < MAX_POINTS; i++) {
+                let block = document.createElement('div');
+                block.className = 'point-block ' + (i < used ? 'used' : 'empty');
+                container.appendChild(block);
+            }
+        }
+        
+        // Initialize visuals on load
+        updatePointsVisual();
+
 
         const playerId = "Student_" + Math.floor(Math.random() * 1000);
         let playerRef;
@@ -511,7 +557,6 @@
                 s.x += s.vx;
                 s.y += s.vy;
 
-                // --- NEW WALL COLLISION LOGIC WITH ENERGY LOSS ---
                 if (s.x < radius) { 
                     s.x = radius; 
                     s.vx *= -bounce; 
