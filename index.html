@@ -5,14 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>High-Velocity Spherical Asset Management</title>
     <style>
-        body { margin: 0; padding: 0; background-color: #1a1a2e; color: white; font-family: monospace; overflow: hidden; }
-        #lobby { padding: 20px; max-width: 600px; margin: 0 auto; }
+        body { margin: 0; padding: 0; background-color: #0d0f18; color: white; font-family: monospace; overflow: hidden; }
+        
+        #lobby { padding: 20px; max-width: 600px; margin: 0 auto; margin-top: 50px; }
         .stat-row { display: flex; justify-content: space-between; margin-bottom: 15px; align-items: center; }
         button { background: #e94560; color: white; border: none; padding: 10px 15px; cursor: pointer; border-radius: 5px; }
         button:hover { background: #d03050; }
         #deploy-btn { width: 100%; font-size: 1.2em; margin-top: 20px; }
-        #gameCanvas { display: none; background-color: #16213e; width: 100vw; height: 100vh; cursor: crosshair; }
-        #hud { display: none; position: absolute; top: 10px; left: 10px; pointer-events: none; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; }
+        
+        /* The standard resolution lock */
+        #gameCanvas { 
+            display: none; 
+            background-color: #16213e; 
+            cursor: crosshair; 
+            position: absolute; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+            max-width: 100vw; 
+            max-height: 100vh; 
+            aspect-ratio: 16 / 9; /* Enforces fairness */
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }
+
+        #hud { display: none; position: absolute; top: 20px; left: 20px; pointer-events: none; background: rgba(0,0,0,0.7); padding: 10px 20px; border-radius: 8px; z-index: 10; border: 1px solid #444; }
         #hud h3, #hud h2 { margin: 5px 0; }
         #ammo-display { color: #ffcc00; }
         
@@ -85,7 +101,6 @@
         <h2 id="ammo-display">Dodgeballs: 0 / 0</h2>
     </div>
     
-    <!-- Hidden Dev Console (Ctrl+Alt+D) -->
     <div id="dev-panel">
         <h2>Physics Dashboard</h2>
         <div class="dev-actions" style="margin-top: 0; margin-bottom: 15px;">
@@ -118,10 +133,8 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // --- THE "OFFICIAL" DEFAULTS ---
-        // If the game breaks, clicking "Revert to Defaults" restores exactly these numbers.
         const gameConfigDefaults = {
-            centerWallActive: true,     // True = Invisible wall is ON
+            centerWallActive: true,     
             adminSpawnCount: 15,        
             adminSpawnVelocity: 5.0,    
             powerFlightTime: 800,       
@@ -137,10 +150,8 @@
             capacityPerStat: 2.0        
         };
 
-        // This object holds the active live limits used in the physics engine.
         let gameConfig = { ...gameConfigDefaults };
 
-        // Define min, max, and step for the sliders
         const configRanges = {
             adminSpawnCount: { min: 1, max: 50, step: 1 },
             adminSpawnVelocity: { min: 0, max: 20, step: 0.5 },
@@ -157,7 +168,6 @@
             capacityPerStat: { min: 1, max: 5, step: 1 }
         };
 
-        // Render Dev Console Sliders
         const devInputsDiv = document.getElementById('dev-inputs');
         Object.keys(gameConfigDefaults).forEach(key => {
             const wrapper = document.createElement('div');
@@ -195,7 +205,6 @@
             }
         });
 
-        // Instantly push a single changed setting to Firebase
         window.updateSetting = function(key, value) {
             let parsedVal = typeof value === 'boolean' ? value : parseFloat(value);
             set(ref(db, 'settings/' + key), parsedVal);
@@ -210,13 +219,11 @@
             alert("To save these permanently, copy this JSON and replace 'const gameConfigDefaults' in your code:\n\n" + jsonString);
         }
 
-        // Listen for Firebase setting updates
         onValue(ref(db, 'settings'), (snapshot) => {
             if (snapshot.exists()) {
                 let newConfig = snapshot.val();
-                gameConfig = { ...gameConfigDefaults, ...newConfig }; // Merge to ensure missing keys aren't dropped
+                gameConfig = { ...gameConfigDefaults, ...newConfig }; 
                 
-                // Update Dev Console UI inputs dynamically without losing focus
                 Object.keys(gameConfig).forEach(key => {
                     if (key === 'centerWallActive') {
                         let checkbox = document.getElementById(`dev-${key}`);
@@ -233,13 +240,11 @@
                     calculateRobotStats();
                 }
             } else {
-                // If the settings node is empty (someone pressed reset), fallback locally
                 gameConfig = { ...gameConfigDefaults };
                 calculateRobotStats();
             }
         });
 
-        // --- LOBBY AND GAME SETUP ---
         const MAX_POINTS = 10;
         let stats = { speed: 1, fireRate: 1, capacity: 1, battery: 1 };
         
@@ -261,9 +266,9 @@
         let activeSpheres = [];
 
         let myRobot = {
-            x: 400, y: 300, size: 20, 
+            x: 0, y: 0, size: 20, 
             speedBase: 0, emitterPower: 0, maxDodgeballs: 0, currentDodgeballs: 0, 
-            color: Math.random() > 0.5 ? '#ff4757' : '#1e90ff' // Red is left, Blue is right
+            color: Math.random() > 0.5 ? '#ff4757' : '#1e90ff' 
         };
 
         function calculateRobotStats() {
@@ -285,15 +290,16 @@
             document.getElementById('player-id-display').innerText = `${playerId} (Team ${myRobot.color === '#ff4757' ? 'Red' : 'Blue'})`;
             
             const canvas = document.getElementById('gameCanvas');
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            
+            // LOCKING INTERNAL RESOLUTION TO 1600x900 (16:9 Aspect Ratio)
+            canvas.width = 1600;
+            canvas.height = 900;
 
             calculateRobotStats();
             myRobot.currentDodgeballs = 0; 
             document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
 
-            // Red spawns left, Blue spawns right
-            myRobot.x = myRobot.color === '#ff4757' ? 100 : canvas.width - 100;
+            myRobot.x = myRobot.color === '#ff4757' ? 200 : canvas.width - 200;
             myRobot.y = canvas.height / 2;
 
             playerRef = ref(db, 'players/' + playerId);
@@ -304,8 +310,17 @@
 
             canvas.addEventListener('mousedown', (e) => {
                 if (myRobot.currentDodgeballs > 0) {
-                    const dx = e.clientX - (myRobot.x + myRobot.size/2);
-                    const dy = e.clientY - (myRobot.y + myRobot.size/2);
+                    
+                    // TRANSLATING SCREEN CLICK TO INTERNAL GAME RESOLUTION
+                    const rect = canvas.getBoundingClientRect();
+                    const scaleX = canvas.width / rect.width;
+                    const scaleY = canvas.height / rect.height;
+                    
+                    const clickX = (e.clientX - rect.left) * scaleX;
+                    const clickY = (e.clientY - rect.top) * scaleY;
+
+                    const dx = clickX - (myRobot.x + myRobot.size/2);
+                    const dy = clickY - (myRobot.y + myRobot.size/2);
                     const angle = Math.atan2(dy, dx);
 
                     myRobot.currentDodgeballs--;
@@ -377,7 +392,6 @@
             const ctx = canvas.getContext('2d');
             const centerX = canvas.width / 2;
 
-            // --- MOVEMENT & THE INVISIBLE WALL ---
             let nextX = myRobot.x;
             let nextY = myRobot.y;
 
@@ -386,13 +400,10 @@
             if ((keys['a'] || keys['arrowleft']) && myRobot.x > 0) nextX -= myRobot.speedBase;
             if ((keys['d'] || keys['arrowright']) && myRobot.x < canvas.width - myRobot.size) nextX += myRobot.speedBase;
 
-            // Apply Invisible Center Wall if active
             if (gameConfig.centerWallActive) {
                 if (myRobot.color === '#ff4757') {
-                    // Red is left side. Cannot cross past center.
                     if (nextX + myRobot.size > centerX) nextX = centerX - myRobot.size;
                 } else {
-                    // Blue is right side. Cannot cross behind center.
                     if (nextX < centerX) nextX = centerX;
                 }
             }
@@ -402,7 +413,6 @@
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw Center Line
             ctx.strokeStyle = gameConfig.centerWallActive ? '#ff4444' : 'white';
             ctx.lineWidth = gameConfig.centerWallActive ? 3 : 1;
             ctx.setLineDash([10, 15]);
