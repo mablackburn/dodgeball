@@ -15,19 +15,19 @@
         #hud { display: none; position: absolute; top: 10px; left: 10px; pointer-events: none; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; }
         #hud h3, #hud h2 { margin: 5px 0; }
         #ammo-display { color: #ffcc00; }
-        .admin-btn { pointer-events: auto; background: #ffaa00; color: black; font-weight: bold; margin-top: 10px; font-size: 0.9em; }
-        .admin-btn:hover { background: #e69900; }
-
+        
         /* Dev Console Styles */
-        #dev-panel { display: none; position: absolute; top: 10px; right: 10px; background: rgba(0, 0, 0, 0.85); border: 2px solid lime; padding: 15px; border-radius: 8px; z-index: 100; max-height: 90vh; overflow-y: auto; color: lime; width: 350px; }
+        #dev-panel { display: none; position: absolute; top: 10px; right: 10px; background: rgba(0, 0, 0, 0.85); border: 2px solid lime; padding: 15px; border-radius: 8px; z-index: 100; max-height: 90vh; overflow-y: auto; color: lime; width: 350px; pointer-events: auto; }
         #dev-panel h2 { margin-top: 0; border-bottom: 1px solid lime; padding-bottom: 5px; }
         .dev-row { margin-bottom: 10px; display: flex; flex-direction: column; }
         .dev-row label { font-size: 0.85em; margin-bottom: 3px; font-weight: bold; }
         .dev-row span { font-size: 0.75em; color: #aaa; margin-bottom: 3px; }
         .dev-row input { background: #222; color: lime; border: 1px solid #444; padding: 5px; }
-        .dev-actions { display: flex; gap: 10px; margin-top: 20px; }
-        .dev-actions button { background: lime; color: black; flex: 1; font-weight: bold; }
+        .dev-actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+        .dev-actions button { background: lime; color: black; flex: 1 1 45%; font-weight: bold; padding: 8px; }
         .dev-actions button:hover { background: #00cc00; }
+        .admin-btn { background: #ffaa00 !important; flex: 1 1 100% !important; margin-bottom: 10px; }
+        .admin-btn:hover { background: #e69900 !important; }
     </style>
 </head>
 <body>
@@ -75,12 +75,14 @@
     <div id="hud">
         <h3 id="player-id-display"></h3>
         <h2 id="ammo-display">Dodgeballs: 0 / 0</h2>
-        <button class="admin-btn" onclick="releaseDodgeballs()">Admin: Center Rush</button>
     </div>
     
-    <!-- Hidden Dev Console -->
+    <!-- Hidden Dev Console (Ctrl+Alt+D) -->
     <div id="dev-panel">
         <h2>Physics Dashboard</h2>
+        <div class="dev-actions" style="margin-top: 0;">
+            <button class="admin-btn" onclick="releaseDodgeballs()">Admin: Center Rush</button>
+        </div>
         <div id="dev-inputs"></div>
         <div class="dev-actions">
             <button onclick="pushSettingsToServer()">Push Live to All</button>
@@ -107,22 +109,20 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // --- GLOBAL PHYSICS VARIABLES (The Defaults) ---
         let gameConfig = {
-            powerFlightTime: 800,       // Milliseconds a ball flies straight before friction hits
-            frictionRetained: 0.98,     // % of speed kept per frame after flight time ends (closer to 1 = slides further)
-            pickupMaxSpeed: 3.5,        // Max speed a ball can be moving for a player to safely vacuum it
-            funnelActiveSpeed: 2.5,     // Speed at which the ball begins rolling toward the center line
-            funnelGravity: 0.05,        // How strongly the ball is pulled to the center line
-            robotBaseSpeed: 2.0,        // Starting speed for a robot with 1 point in Mobility
-            robotSpeedPerStat: 0.5,     // Speed added per point in Mobility
-            ballBaseVelocity: 6.0,      // Starting speed of a fired dodgeball
-            ballVelocityPerStat: 2.5,   // Speed added per point in Pneumatic Emitter
-            capacityBaseAmmo: 2.0,      // Starting dodgeball limit
-            capacityPerStat: 2.0        // Dodgeball limit added per point in Capacity
+            powerFlightTime: 800,       
+            frictionRetained: 0.98,     
+            pickupMaxSpeed: 3.5,        
+            funnelActiveSpeed: 2.5,     
+            funnelGravity: 0.05,        
+            robotBaseSpeed: 2.0,        
+            robotSpeedPerStat: 0.5,     
+            ballBaseVelocity: 6.0,      
+            ballVelocityPerStat: 2.5,   
+            capacityBaseAmmo: 2.0,      
+            capacityPerStat: 2.0        
         };
 
-        // Render Dev Console Inputs dynamically based on the object above
         const devInputsDiv = document.getElementById('dev-inputs');
         Object.keys(gameConfig).forEach(key => {
             const wrapper = document.createElement('div');
@@ -134,7 +134,6 @@
             devInputsDiv.appendChild(wrapper);
         });
 
-        // Toggle Dev Console with Ctrl + Alt + D
         window.addEventListener('keydown', (e) => {
             if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'd') {
                 const panel = document.getElementById('dev-panel');
@@ -142,7 +141,6 @@
             }
         });
 
-        // Dev Console: Push settings to Firebase
         window.pushSettingsToServer = function() {
             let newSettings = {};
             Object.keys(gameConfig).forEach(key => {
@@ -151,32 +149,27 @@
             set(ref(db, 'settings'), newSettings);
         }
 
-        // Dev Console: Print as code
         window.printDefaults = function() {
             let jsonString = JSON.stringify(gameConfig, null, 4);
             alert("Copy this and replace the 'let gameConfig = {...}' block in your index.html file:\n\n" + jsonString);
         }
 
-        // Listen for Physics Updates from Firebase
         onValue(ref(db, 'settings'), (snapshot) => {
             if (snapshot.exists()) {
                 let newConfig = snapshot.val();
                 gameConfig = { ...gameConfig, ...newConfig };
                 
-                // Update Dev Console UI inputs if they are open
                 Object.keys(gameConfig).forEach(key => {
                     let input = document.getElementById(`dev-${key}`);
                     if(input) input.value = gameConfig[key];
                 });
 
-                // If already playing, immediately recalculate the player's stats
                 if (document.getElementById('gameCanvas').style.display === 'block') {
                     calculateRobotStats();
                 }
             }
         });
 
-        // --- LOBBY LOGIC ---
         const MAX_POINTS = 10;
         let stats = { speed: 1, fireRate: 1, capacity: 1, battery: 1 };
         
@@ -208,10 +201,8 @@
             myRobot.size = 20 + (stats.capacity * 3);    
             myRobot.emitterPower = gameConfig.ballBaseVelocity + (stats.fireRate * gameConfig.ballVelocityPerStat); 
             
-            let previousMax = myRobot.maxDodgeballs;
             myRobot.maxDodgeballs = gameConfig.capacityBaseAmmo + (stats.capacity * gameConfig.capacityPerStat); 
             
-            // Prevent keeping extra ammo if capacity stat shrinks via live dev update
             if (myRobot.currentDodgeballs > myRobot.maxDodgeballs) myRobot.currentDodgeballs = myRobot.maxDodgeballs;
             document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
         }
@@ -318,11 +309,11 @@
             const radius = 8;
             const now = Date.now();
 
-            for (let i = activeSpheres.length - 1; i >= 0; i--) {
+            // 1. Move balls, apply friction and walls
+            for (let i = 0; i < activeSpheres.length; i++) {
                 let s = activeSpheres[i];
                 let flightTime = now - s.firedAt;
                 
-                // PHYSICS: Check against Global Settings
                 if (flightTime > gameConfig.powerFlightTime) {
                     s.vx *= gameConfig.frictionRetained;
                     s.vy *= gameConfig.frictionRetained;
@@ -330,7 +321,6 @@
                 
                 let currentSpeed = Math.sqrt(s.vx*s.vx + s.vy*s.vy);
 
-                // FUNNEL LOGIC
                 if (currentSpeed < gameConfig.funnelActiveSpeed && flightTime > gameConfig.powerFlightTime) {
                     if (s.x < centerX - 10) s.vx += gameConfig.funnelGravity; 
                     else if (s.x > centerX + 10) s.vx -= gameConfig.funnelGravity; 
@@ -339,18 +329,62 @@
                 s.x += s.vx;
                 s.y += s.vy;
 
-                // WALLS
                 if (s.x < radius) { s.x = radius; s.vx *= -1; }
                 if (s.x > canvas.width - radius) { s.x = canvas.width - radius; s.vx *= -1; }
                 if (s.y < radius) { s.y = radius; s.vy *= -1; }
                 if (s.y > canvas.height - radius) { s.y = canvas.height - radius; s.vy *= -1; }
+            }
+
+            // 2. Ball-to-Ball Collisions (Only if BOTH are on the ground)
+            for (let i = 0; i < activeSpheres.length; i++) {
+                let s1 = activeSpheres[i];
+                if ((now - s1.firedAt) <= gameConfig.powerFlightTime) continue; // s1 is in the air
+
+                for (let j = i + 1; j < activeSpheres.length; j++) {
+                    let s2 = activeSpheres[j];
+                    if ((now - s2.firedAt) <= gameConfig.powerFlightTime) continue; // s2 is in the air
+
+                    let dx = s2.x - s1.x;
+                    let dy = s2.y - s1.y;
+                    let distance = Math.sqrt(dx * dx + dy * dy);
+                    let minDist = radius * 2; // 16px
+
+                    if (distance < minDist && distance > 0) {
+                        // Positional correction (prevents them getting stuck together)
+                        let overlap = minDist - distance;
+                        let nx = dx / distance;
+                        let ny = dy / distance;
+                        
+                        let pushX = (nx * overlap) / 2;
+                        let pushY = (ny * overlap) / 2;
+                        
+                        s1.x -= pushX; s1.y -= pushY;
+                        s2.x += pushX; s2.y += pushY;
+                        
+                        // Elastic collision velocity transfer
+                        let vxDiff = s1.vx - s2.vx;
+                        let vyDiff = s1.vy - s2.vy;
+                        let dotProduct = (vxDiff * nx) + (vyDiff * ny);
+                        
+                        if (dotProduct > 0) {
+                            s1.vx -= dotProduct * nx; s1.vy -= dotProduct * ny;
+                            s2.vx += dotProduct * nx; s2.vy += dotProduct * ny;
+                        }
+                    }
+                }
+            }
+
+            // 3. Draw Balls and handle Pickups
+            for (let i = activeSpheres.length - 1; i >= 0; i--) {
+                let s = activeSpheres[i];
+                let flightTime = now - s.firedAt;
+                let currentSpeed = Math.sqrt(s.vx*s.vx + s.vy*s.vy);
 
                 ctx.fillStyle = '#ffcc00'; 
                 ctx.beginPath();
                 ctx.arc(s.x, s.y, radius, 0, Math.PI * 2);
                 ctx.fill();
 
-                // PICKUP LOGIC
                 if (currentSpeed < gameConfig.pickupMaxSpeed && flightTime > gameConfig.powerFlightTime && myRobot.currentDodgeballs < myRobot.maxDodgeballs && !s.claimPending) {
                     let testX = s.x; let testY = s.y;
                     if (s.x < myRobot.x) testX = myRobot.x;
@@ -358,9 +392,9 @@
                     if (s.y < myRobot.y) testY = myRobot.y;
                     else if (s.y > myRobot.y + myRobot.size) testY = myRobot.y + myRobot.size;
 
-                    let distance = Math.sqrt(Math.pow(s.x - testX, 2) + Math.pow(s.y - testY, 2));
+                    let dist = Math.sqrt(Math.pow(s.x - testX, 2) + Math.pow(s.y - testY, 2));
 
-                    if (distance <= radius) {
+                    if (dist <= radius) {
                         s.claimPending = true; 
                         runTransaction(ref(db, 'spheres/' + s.id + '/claimedBy'), (currentOwner) => {
                             if (currentOwner === null) return playerId; 
@@ -378,6 +412,7 @@
                 }
             }
 
+            // Draw Players
             Object.keys(otherPlayers).forEach(id => {
                 if (id !== playerId) {
                     let p = otherPlayers[id];
