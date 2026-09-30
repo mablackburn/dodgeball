@@ -151,7 +151,8 @@
             adminSpawnCount: 15,        
             adminSpawnVelocity: 5.0,    
             powerFlightTime: 800,       
-            frictionRetained: 0.98,     
+            frictionRetained: 0.98,
+            wallBounceRetained: 0.85,   // NEW: Bleeds 15% speed every time a ball hits a wall
             pickupMaxSpeed: 3.5,        
             funnelActiveSpeed: 2.5,     
             funnelGravity: 0.05,        
@@ -159,8 +160,8 @@
             robotSpeedPerStat: 0.5,     
             ballBaseVelocity: 6.0,      
             ballVelocityPerStat: 2.5,   
-            cooldownBase: 1200,         // Base milliseconds between shots (1.2 seconds)
-            cooldownPerStat: 100,       // MS subtracted per stat point 
+            cooldownBase: 1200,         
+            cooldownPerStat: 100,       
             capacityBaseAmmo: 2.0,      
             capacityPerStat: 2.0        
         };
@@ -172,6 +173,7 @@
             adminSpawnVelocity: { min: 0, max: 20, step: 0.5 },
             powerFlightTime: { min: 100, max: 2500, step: 50 },
             frictionRetained: { min: 0.90, max: 1.00, step: 0.01 },
+            wallBounceRetained: { min: 0.10, max: 1.00, step: 0.05 },
             pickupMaxSpeed: { min: 1, max: 8, step: 0.1 },
             funnelActiveSpeed: { min: 1, max: 8, step: 0.1 },
             funnelGravity: { min: 0, max: 0.3, step: 0.01 },
@@ -272,19 +274,14 @@
             }
         });
 
-        // --- NEW POINT LIMITS ---
         const MAX_POINTS = 25;
         const MAX_STAT_VALUE = 10;
         let stats = { speed: 1, velocity: 1, fireRate: 1, capacity: 1, battery: 1 };
         
         window.changeStat = function(stat, change) {
             let totalUsed = stats.speed + stats.velocity + stats.fireRate + stats.capacity + stats.battery;
-            
-            // Prevent going over total budget
             if (change > 0 && totalUsed >= MAX_POINTS) return;
-            // Prevent going over individual stat cap (10)
             if (change > 0 && stats[stat] >= MAX_STAT_VALUE) return;
-            // Prevent dropping below 1
             if (stats[stat] + change < 1) return; 
             
             stats[stat] += change;
@@ -311,7 +308,6 @@
             myRobot.size = 20 + (stats.capacity * 3);    
             myRobot.emitterPower = gameConfig.ballBaseVelocity + (stats.velocity * gameConfig.ballVelocityPerStat); 
             
-            // Calculate Fire Rate Cooldown (Prevent dropping below 50ms)
             let rawCooldown = gameConfig.cooldownBase - (stats.fireRate * gameConfig.cooldownPerStat);
             myRobot.fireCooldown = Math.max(rawCooldown, 50); 
 
@@ -354,12 +350,8 @@
                 let isWarmup = (currentGameState === 'waiting');
                 let now = Date.now();
 
-                // COOLDOWN CHECK
                 if (now - myRobot.lastFiredTime >= myRobot.fireCooldown) {
-
                     if (isWarmup || myRobot.currentDodgeballs > 0) {
-                        
-                        // Lock the trigger
                         myRobot.lastFiredTime = now;
 
                         const rect = canvas.getBoundingClientRect();
@@ -498,6 +490,7 @@
             ctx.stroke();
 
             const radius = 8;
+            let bounce = gameConfig.wallBounceRetained;
 
             for (let i = 0; i < activeSpheres.length; i++) {
                 let s = activeSpheres[i];
@@ -518,10 +511,27 @@
                 s.x += s.vx;
                 s.y += s.vy;
 
-                if (s.x < radius) { s.x = radius; s.vx *= -1; }
-                if (s.x > canvas.width - radius) { s.x = canvas.width - radius; s.vx *= -1; }
-                if (s.y < radius) { s.y = radius; s.vy *= -1; }
-                if (s.y > canvas.height - radius) { s.y = canvas.height - radius; s.vy *= -1; }
+                // --- NEW WALL COLLISION LOGIC WITH ENERGY LOSS ---
+                if (s.x < radius) { 
+                    s.x = radius; 
+                    s.vx *= -bounce; 
+                    s.vy *= bounce; 
+                }
+                if (s.x > canvas.width - radius) { 
+                    s.x = canvas.width - radius; 
+                    s.vx *= -bounce; 
+                    s.vy *= bounce; 
+                }
+                if (s.y < radius) { 
+                    s.y = radius; 
+                    s.vy *= -bounce; 
+                    s.vx *= bounce; 
+                }
+                if (s.y > canvas.height - radius) { 
+                    s.y = canvas.height - radius; 
+                    s.vy *= -bounce; 
+                    s.vx *= bounce; 
+                }
             }
 
             for (let i = 0; i < activeSpheres.length; i++) {
