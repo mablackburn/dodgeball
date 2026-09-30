@@ -12,7 +12,9 @@
         button:hover { background: #d03050; }
         #deploy-btn { width: 100%; font-size: 1.2em; margin-top: 20px; }
         #gameCanvas { display: none; background-color: #16213e; width: 100vw; height: 100vh; cursor: crosshair; }
-        #hud { display: none; position: absolute; top: 10px; left: 10px; pointer-events: none; }
+        #hud { display: none; position: absolute; top: 10px; left: 10px; pointer-events: none; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; }
+        #hud h3, #hud h2 { margin: 5px 0; }
+        #ammo-display { color: #00ffcc; }
     </style>
 </head>
 <body>
@@ -30,7 +32,7 @@
             </div>
         </div>
         <div class="stat-row">
-            <span>Pneumatic Emitter (Fire Rate / Velocity)</span>
+            <span>Pneumatic Emitter (Velocity)</span>
             <div>
                 <button onclick="changeStat('fireRate', -1)">-</button>
                 <span id="val-fireRate" style="margin: 0 10px;">1</span>
@@ -59,13 +61,14 @@
 
     <div id="hud">
         <h3 id="player-id-display"></h3>
+        <h2 id="ammo-display">Ammo: 0 / 0</h2>
     </div>
     
     <canvas id="gameCanvas"></canvas>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-app.js";
-        import { getDatabase, ref, set, push, onValue, onChildAdded, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-database.js";
+        import { getDatabase, ref, set, push, onValue, onChildAdded, onChildRemoved, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-database.js";
 
         const firebaseConfig = {
           apiKey: "AIzaSyB3uYYcGIivcmIxrxJKGkbVP9JveKW0myM",
@@ -97,15 +100,16 @@
         let playerRef;
         const keys = {};
         
-        // Game State arrays
         let otherPlayers = {};
-        let activeSpheres = [];
+        let activeSpheres = []; // Now stores objects with unique IDs
 
         let myRobot = {
             x: 400, y: 300,
             size: 20, 
             speedBase: 0,
             emitterPower: 0,
+            maxAmmo: 0,
+            currentAmmo: 0,
             color: Math.random() > 0.5 ? '#ff4757' : '#1e90ff' 
         };
 
@@ -119,10 +123,15 @@
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
 
-            // Apply Stats
+            // Apply Stats mathematically
             myRobot.speedBase = 2 + (stats.speed * 0.5); 
             myRobot.size = 20 + (stats.capacity * 3);    
-            myRobot.emitterPower = 5 + (stats.fireRate * 2); // Velocity of the dodgeball
+            myRobot.emitterPower = 5 + (stats.fireRate * 2); 
+            
+            // Setting up Ammo Capacity
+            myRobot.maxAmmo = 2 + (stats.capacity * 2); // Base 4 ammo, more points = more ammo
+            myRobot.currentAmmo = myRobot.maxAmmo;      // Spawn with full ammo
+            document.getElementById('ammo-display').innerText = `Ammo: ${myRobot.currentAmmo} / ${myRobot.maxAmmo}`;
 
             playerRef = ref(db, 'players/' + playerId);
             onDisconnect(playerRef).remove(); 
@@ -130,44 +139,47 @@
             window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
             window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
 
-            // FIRE MECHANIC (Mouse Click)
             window.addEventListener('mousedown', (e) => {
-                // Calculate angle from center of robot to mouse click
-                const dx = e.clientX - (myRobot.x + myRobot.size/2);
-                const dy = e.clientY - (myRobot.y + myRobot.size/2);
-                const angle = Math.atan2(dy, dx);
+                if (myRobot.currentAmmo > 0) {
+                    // Calculate aim
+                    const dx = e.clientX - (myRobot.x + myRobot.size/2);
+                    const dy = e.clientY - (myRobot.y + myRobot.size/2);
+                    const angle = Math.atan2(dy, dx);
 
-                // Push new sphere to Firebase
-                const sphereRef = ref(db, 'spheres');
-                push(sphereRef, {
-                    x: myRobot.x + myRobot.size/2,
-                    y: myRobot.y + myRobot.size/2,
-                    vx: Math.cos(angle) * myRobot.emitterPower,
-                    vy: Math.sin(angle) * myRobot.emitterPower,
-                    color: myRobot.color,
-                    owner: playerId
-                });
+                    // Decrease ammo and update HUD
+                    myRobot.currentAmmo--;
+                    document.getElementById('ammo-display').innerText = `Ammo: ${myRobot.currentAmmo} / ${myRobot.maxAmmo}`;
+
+                    // Push sphere to database (no longer auto-deleting)
+                    const sphereRef = ref(db, 'spheres');
+                    push(sphereRef, {
+                        x: myRobot.x + myRobot.size/2,
+                        y: myRobot.y + myRobot.size/2,
+                        vx: Math.cos(angle) * myRobot.emitterPower,
+                        vy: Math.sin(angle) * myRobot.emitterPower,
+                        color: myRobot.color
+                    });
+                }
             });
 
-            // Listen for other players
             onValue(ref(db, 'players'), (snapshot) => {
                 otherPlayers = snapshot.val() || {};
             });
 
-            // Listen for NEW spheres fired by anyone
+            // Listen for NEW spheres
             onChildAdded(ref(db, 'spheres'), (snapshot) => {
                 const data = snapshot.val();
                 activeSpheres.push({
+                    id: snapshot.key, // Store the Firebase ID
                     x: data.x, y: data.y,
                     vx: data.vx, vy: data.vy,
                     color: data.color
                 });
-                
-                // Optional: Auto-delete the database record so Firebase doesn't get cluttered.
-                // The ball will still render locally until it flies off screen.
-                if(data.owner === playerId) {
-                     setTimeout(() => remove(ref(db, 'spheres/' + snapshot.key)), 1000);
-                }
+            });
+
+            // Listen for DELETED spheres (when someone picks them up)
+            onChildRemoved(ref(db, 'spheres'), (snapshot) => {
+                activeSpheres = activeSpheres.filter(s => s.id !== snapshot.key);
             });
 
             requestAnimationFrame(gameLoop);
@@ -175,38 +187,82 @@
         }
 
         function gameLoop() {
-            // Movement Logic (Keeping robots on screen)
             const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Screen boundaries for robot
             if ((keys['w'] || keys['arrowup']) && myRobot.y > 0) myRobot.y -= myRobot.speedBase;
             if ((keys['s'] || keys['arrowdown']) && myRobot.y < canvas.height - myRobot.size) myRobot.y += myRobot.speedBase;
             if ((keys['a'] || keys['arrowleft']) && myRobot.x > 0) myRobot.x -= myRobot.speedBase;
             if ((keys['d'] || keys['arrowright']) && myRobot.x < canvas.width - myRobot.size) myRobot.x += myRobot.speedBase;
 
-            const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // Draw Center Line
+            const centerX = canvas.width / 2;
             ctx.strokeStyle = 'white';
             ctx.setLineDash([10, 15]);
             ctx.beginPath();
-            ctx.moveTo(canvas.width / 2, 0);
-            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.moveTo(centerX, 0);
+            ctx.lineTo(centerX, canvas.height);
             ctx.stroke();
 
             // Simulate and Draw Spheres
+            const radius = 8;
             for (let i = activeSpheres.length - 1; i >= 0; i--) {
                 let s = activeSpheres[i];
+                
+                // 1. Apply Friction (Slows down by 1% every frame)
+                s.vx *= 0.99;
+                s.vy *= 0.99;
+                let currentSpeed = Math.sqrt(s.vx*s.vx + s.vy*s.vy);
+
+                // 2. The Funnel (If slow, roll to center line)
+                if (currentSpeed < 3) {
+                    if (s.x < centerX - 10) s.vx += 0.05; // Roll right
+                    else if (s.x > centerX + 10) s.vx -= 0.05; // Roll left
+                }
+
                 s.x += s.vx;
                 s.y += s.vy;
 
+                // 3. Wall Collisions (Enclosed Arena)
+                if (s.x < radius) { s.x = radius; s.vx *= -1; }
+                if (s.x > canvas.width - radius) { s.x = canvas.width - radius; s.vx *= -1; }
+                if (s.y < radius) { s.y = radius; s.vy *= -1; }
+                if (s.y > canvas.height - radius) { s.y = canvas.height - radius; s.vy *= -1; }
+
+                // Draw the sphere
                 ctx.fillStyle = s.color;
                 ctx.beginPath();
-                ctx.arc(s.x, s.y, 8, 0, Math.PI * 2);
+                ctx.arc(s.x, s.y, radius, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Remove sphere if it flies way off screen
-                if (s.x < -100 || s.x > canvas.width + 100 || s.y < -100 || s.y > canvas.height + 100) {
-                    activeSpheres.splice(i, 1);
+                // 4. Pickup / Vacuum Logic
+                if (currentSpeed < 2.5 && myRobot.currentAmmo < myRobot.maxAmmo) {
+                    // Check if Robot (rectangle) overlaps Sphere (circle)
+                    let testX = s.x; let testY = s.y;
+                    if (s.x < myRobot.x) testX = myRobot.x;
+                    else if (s.x > myRobot.x + myRobot.size) testX = myRobot.x + myRobot.size;
+                    if (s.y < myRobot.y) testY = myRobot.y;
+                    else if (s.y > myRobot.y + myRobot.size) testY = myRobot.y + myRobot.size;
+
+                    let distX = s.x - testX;
+                    let distY = s.y - testY;
+                    let distance = Math.sqrt((distX*distX) + (distY*distY));
+
+                    // If touching
+                    if (distance <= radius) {
+                        // Increase Ammo
+                        myRobot.currentAmmo++;
+                        document.getElementById('ammo-display').innerText = `Ammo: ${myRobot.currentAmmo} / ${myRobot.maxAmmo}`;
+                        
+                        // Tell server to delete this ball so no one else gets it
+                        remove(ref(db, 'spheres/' + s.id));
+                        
+                        // Delete locally immediately to prevent double-pickups
+                        activeSpheres.splice(i, 1);
+                    }
                 }
             }
 
@@ -223,7 +279,7 @@
             ctx.fillStyle = myRobot.color;
             ctx.fillRect(myRobot.x, myRobot.y, myRobot.size, myRobot.size);
             
-            // Draw aiming reticle over robot
+            // Aiming reticle
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
             ctx.setLineDash([]);
             ctx.strokeRect(myRobot.x - 2, myRobot.y - 2, myRobot.size + 4, myRobot.size + 4);
