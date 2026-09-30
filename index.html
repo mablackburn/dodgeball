@@ -17,19 +17,25 @@
         #ammo-display { color: #ffcc00; }
         
         /* Dev Console Styles */
-        #dev-panel { display: none; position: absolute; top: 10px; right: 10px; background: rgba(0, 0, 0, 0.85); border: 2px solid lime; padding: 15px; border-radius: 8px; z-index: 100; max-height: 90vh; overflow-y: auto; color: lime; width: 350px; pointer-events: auto; }
+        #dev-panel { display: none; position: absolute; top: 10px; right: 10px; background: rgba(0, 0, 0, 0.85); border: 2px solid lime; padding: 15px; border-radius: 8px; z-index: 100; max-height: 90vh; overflow-y: auto; color: lime; width: 380px; pointer-events: auto; }
         #dev-panel h2 { margin-top: 0; border-bottom: 1px solid lime; padding-bottom: 5px; }
-        .dev-row { margin-bottom: 10px; display: flex; flex-direction: column; }
+        .dev-row { margin-bottom: 12px; display: flex; flex-direction: column; }
         .dev-row label { font-size: 0.85em; margin-bottom: 3px; font-weight: bold; }
-        .dev-row span { font-size: 0.75em; color: #aaa; margin-bottom: 3px; }
-        .dev-row input { background: #222; color: lime; border: 1px solid #444; padding: 5px; }
+        .dev-row .input-group { display: flex; gap: 10px; align-items: center; }
+        .dev-row input[type="range"] { flex-grow: 1; accent-color: lime; cursor: pointer; }
+        .dev-row input[type="number"] { width: 60px; background: #222; color: lime; border: 1px solid #444; padding: 3px; text-align: center; }
+        .dev-row input[type="checkbox"] { transform: scale(1.5); accent-color: lime; cursor: pointer; }
+        
         .dev-actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
-        .dev-actions button { background: lime; color: black; flex: 1 1 45%; font-weight: bold; padding: 8px; }
-        .dev-actions button:hover { background: #00cc00; }
-        .admin-btn { background: #ffaa00 !important; flex: 1 1 100% !important; margin-bottom: 10px; }
+        .dev-actions button { flex: 1 1 45%; font-weight: bold; padding: 8px; color: black; }
+        .admin-btn { background: #ffaa00 !important; flex: 1 1 100% !important; margin-bottom: 5px; }
         .admin-btn:hover { background: #e69900 !important; }
         .admin-clear { background: #ff4444 !important; color: white !important; }
         .admin-clear:hover { background: #cc0000 !important; }
+        .btn-reset { background: #ff4444 !important; color: white !important; }
+        .btn-reset:hover { background: #cc0000 !important; }
+        .btn-save { background: #ccc !important; }
+        .btn-save:hover { background: #aaa !important; }
     </style>
 </head>
 <body>
@@ -79,16 +85,17 @@
         <h2 id="ammo-display">Dodgeballs: 0 / 0</h2>
     </div>
     
+    <!-- Hidden Dev Console (Ctrl+Alt+D) -->
     <div id="dev-panel">
         <h2>Physics Dashboard</h2>
-        <div class="dev-actions" style="margin-top: 0;">
+        <div class="dev-actions" style="margin-top: 0; margin-bottom: 15px;">
             <button class="admin-btn" onclick="releaseDodgeballs()">Admin: Center Rush</button>
             <button class="admin-btn admin-clear" onclick="clearDodgeballs()">Admin: Clear All Balls</button>
         </div>
         <div id="dev-inputs"></div>
         <div class="dev-actions">
-            <button onclick="pushSettingsToServer()">Push Live to All</button>
-            <button style="background: #ccc;" onclick="printDefaults()">Save as Defaults</button>
+            <button class="btn-reset" onclick="resetToDefaults()">Revert to Defaults</button>
+            <button class="btn-save" onclick="printDefaults()">Copy Current as Defaults</button>
         </div>
     </div>
 
@@ -111,7 +118,10 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        let gameConfig = {
+        // --- THE "OFFICIAL" DEFAULTS ---
+        // If the game breaks, clicking "Revert to Defaults" restores exactly these numbers.
+        const gameConfigDefaults = {
+            centerWallActive: true,     // True = Invisible wall is ON
             adminSpawnCount: 15,        
             adminSpawnVelocity: 5.0,    
             powerFlightTime: 800,       
@@ -127,14 +137,54 @@
             capacityPerStat: 2.0        
         };
 
+        // This object holds the active live limits used in the physics engine.
+        let gameConfig = { ...gameConfigDefaults };
+
+        // Define min, max, and step for the sliders
+        const configRanges = {
+            adminSpawnCount: { min: 1, max: 50, step: 1 },
+            adminSpawnVelocity: { min: 0, max: 20, step: 0.5 },
+            powerFlightTime: { min: 100, max: 2500, step: 50 },
+            frictionRetained: { min: 0.90, max: 1.00, step: 0.01 },
+            pickupMaxSpeed: { min: 1, max: 8, step: 0.1 },
+            funnelActiveSpeed: { min: 1, max: 8, step: 0.1 },
+            funnelGravity: { min: 0, max: 0.3, step: 0.01 },
+            robotBaseSpeed: { min: 0.5, max: 10, step: 0.1 },
+            robotSpeedPerStat: { min: 0.1, max: 3, step: 0.1 },
+            ballBaseVelocity: { min: 2, max: 15, step: 0.5 },
+            ballVelocityPerStat: { min: 0.5, max: 5, step: 0.1 },
+            capacityBaseAmmo: { min: 1, max: 10, step: 1 },
+            capacityPerStat: { min: 1, max: 5, step: 1 }
+        };
+
+        // Render Dev Console Sliders
         const devInputsDiv = document.getElementById('dev-inputs');
-        Object.keys(gameConfig).forEach(key => {
+        Object.keys(gameConfigDefaults).forEach(key => {
             const wrapper = document.createElement('div');
             wrapper.className = 'dev-row';
-            wrapper.innerHTML = `
-                <label>${key}</label>
-                <input type="number" step="0.01" id="dev-${key}" value="${gameConfig[key]}">
-            `;
+            
+            if (key === 'centerWallActive') {
+                wrapper.style.flexDirection = 'row';
+                wrapper.style.justifyContent = 'space-between';
+                wrapper.style.alignItems = 'center';
+                wrapper.innerHTML = `
+                    <label>Restrict Crossing Center Line</label>
+                    <input type="checkbox" id="dev-${key}" ${gameConfig[key] ? 'checked' : ''} 
+                           onchange="updateSetting('${key}', this.checked)">
+                `;
+            } else {
+                let r = configRanges[key];
+                wrapper.innerHTML = `
+                    <label>${key}</label>
+                    <div class="input-group">
+                        <input type="range" id="slider-${key}" min="${r.min}" max="${r.max}" step="${r.step}" value="${gameConfig[key]}" 
+                               oninput="document.getElementById('num-${key}').value = this.value" 
+                               onchange="updateSetting('${key}', this.value)">
+                        <input type="number" id="num-${key}" step="${r.step}" value="${gameConfig[key]}" 
+                               onchange="document.getElementById('slider-${key}').value = this.value; updateSetting('${key}', this.value)">
+                    </div>
+                `;
+            }
             devInputsDiv.appendChild(wrapper);
         });
 
@@ -145,35 +195,51 @@
             }
         });
 
-        window.pushSettingsToServer = function() {
-            let newSettings = {};
-            Object.keys(gameConfig).forEach(key => {
-                newSettings[key] = parseFloat(document.getElementById(`dev-${key}`).value);
-            });
-            set(ref(db, 'settings'), newSettings);
+        // Instantly push a single changed setting to Firebase
+        window.updateSetting = function(key, value) {
+            let parsedVal = typeof value === 'boolean' ? value : parseFloat(value);
+            set(ref(db, 'settings/' + key), parsedVal);
+        }
+
+        window.resetToDefaults = function() {
+            set(ref(db, 'settings'), gameConfigDefaults);
         }
 
         window.printDefaults = function() {
             let jsonString = JSON.stringify(gameConfig, null, 4);
-            alert("Copy this and replace the 'let gameConfig = {...}' block in your index.html file:\n\n" + jsonString);
+            alert("To save these permanently, copy this JSON and replace 'const gameConfigDefaults' in your code:\n\n" + jsonString);
         }
 
+        // Listen for Firebase setting updates
         onValue(ref(db, 'settings'), (snapshot) => {
             if (snapshot.exists()) {
                 let newConfig = snapshot.val();
-                gameConfig = { ...gameConfig, ...newConfig };
+                gameConfig = { ...gameConfigDefaults, ...newConfig }; // Merge to ensure missing keys aren't dropped
                 
+                // Update Dev Console UI inputs dynamically without losing focus
                 Object.keys(gameConfig).forEach(key => {
-                    let input = document.getElementById(`dev-${key}`);
-                    if(input) input.value = gameConfig[key];
+                    if (key === 'centerWallActive') {
+                        let checkbox = document.getElementById(`dev-${key}`);
+                        if(checkbox && document.activeElement !== checkbox) checkbox.checked = gameConfig[key];
+                    } else {
+                        let slider = document.getElementById(`slider-${key}`);
+                        let num = document.getElementById(`num-${key}`);
+                        if (slider && document.activeElement !== slider) slider.value = gameConfig[key];
+                        if (num && document.activeElement !== num) num.value = gameConfig[key];
+                    }
                 });
 
                 if (document.getElementById('gameCanvas').style.display === 'block') {
                     calculateRobotStats();
                 }
+            } else {
+                // If the settings node is empty (someone pressed reset), fallback locally
+                gameConfig = { ...gameConfigDefaults };
+                calculateRobotStats();
             }
         });
 
+        // --- LOBBY AND GAME SETUP ---
         const MAX_POINTS = 10;
         let stats = { speed: 1, fireRate: 1, capacity: 1, battery: 1 };
         
@@ -197,7 +263,7 @@
         let myRobot = {
             x: 400, y: 300, size: 20, 
             speedBase: 0, emitterPower: 0, maxDodgeballs: 0, currentDodgeballs: 0, 
-            color: Math.random() > 0.5 ? '#ff4757' : '#1e90ff' 
+            color: Math.random() > 0.5 ? '#ff4757' : '#1e90ff' // Red is left, Blue is right
         };
 
         function calculateRobotStats() {
@@ -207,7 +273,9 @@
             myRobot.maxDodgeballs = gameConfig.capacityBaseAmmo + (stats.capacity * gameConfig.capacityPerStat); 
             
             if (myRobot.currentDodgeballs > myRobot.maxDodgeballs) myRobot.currentDodgeballs = myRobot.maxDodgeballs;
-            document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
+            
+            let display = document.getElementById('ammo-display');
+            if (display) display.innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
         }
 
         window.deployRobot = function() {
@@ -224,6 +292,7 @@
             myRobot.currentDodgeballs = 0; 
             document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
 
+            // Red spawns left, Blue spawns right
             myRobot.x = myRobot.color === '#ff4757' ? 100 : canvas.width - 100;
             myRobot.y = canvas.height / 2;
 
@@ -257,11 +326,8 @@
                 otherPlayers = snapshot.val() || {};
             });
 
-            // Listen for total board wipe (Admin clear)
             onValue(ref(db, 'spheres'), (snapshot) => {
-                if (!snapshot.exists()) {
-                    activeSpheres = [];
-                }
+                if (!snapshot.exists()) activeSpheres = [];
             });
 
             onChildAdded(ref(db, 'spheres'), (snapshot) => {
@@ -304,23 +370,41 @@
 
         window.clearDodgeballs = function() {
             remove(ref(db, 'spheres'));
-            // Optionally force everyone to drop inventory too, or just let them keep what they are holding.
-            // We are leaving inventories intact for now.
         }
 
         function gameLoop() {
             const canvas = document.getElementById('gameCanvas');
             const ctx = canvas.getContext('2d');
-            
-            if ((keys['w'] || keys['arrowup']) && myRobot.y > 0) myRobot.y -= myRobot.speedBase;
-            if ((keys['s'] || keys['arrowdown']) && myRobot.y < canvas.height - myRobot.size) myRobot.y += myRobot.speedBase;
-            if ((keys['a'] || keys['arrowleft']) && myRobot.x > 0) myRobot.x -= myRobot.speedBase;
-            if ((keys['d'] || keys['arrowright']) && myRobot.x < canvas.width - myRobot.size) myRobot.x += myRobot.speedBase;
+            const centerX = canvas.width / 2;
+
+            // --- MOVEMENT & THE INVISIBLE WALL ---
+            let nextX = myRobot.x;
+            let nextY = myRobot.y;
+
+            if ((keys['w'] || keys['arrowup']) && myRobot.y > 0) nextY -= myRobot.speedBase;
+            if ((keys['s'] || keys['arrowdown']) && myRobot.y < canvas.height - myRobot.size) nextY += myRobot.speedBase;
+            if ((keys['a'] || keys['arrowleft']) && myRobot.x > 0) nextX -= myRobot.speedBase;
+            if ((keys['d'] || keys['arrowright']) && myRobot.x < canvas.width - myRobot.size) nextX += myRobot.speedBase;
+
+            // Apply Invisible Center Wall if active
+            if (gameConfig.centerWallActive) {
+                if (myRobot.color === '#ff4757') {
+                    // Red is left side. Cannot cross past center.
+                    if (nextX + myRobot.size > centerX) nextX = centerX - myRobot.size;
+                } else {
+                    // Blue is right side. Cannot cross behind center.
+                    if (nextX < centerX) nextX = centerX;
+                }
+            }
+
+            myRobot.x = nextX;
+            myRobot.y = nextY;
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            const centerX = canvas.width / 2;
-            ctx.strokeStyle = 'white';
+            // Draw Center Line
+            ctx.strokeStyle = gameConfig.centerWallActive ? '#ff4444' : 'white';
+            ctx.lineWidth = gameConfig.centerWallActive ? 3 : 1;
             ctx.setLineDash([10, 15]);
             ctx.beginPath();
             ctx.moveTo(centerX, 0);
