@@ -110,6 +110,8 @@
         const db = getDatabase(app);
 
         let gameConfig = {
+            adminSpawnCount: 15,        // Number of balls dropped during Center Rush
+            adminSpawnVelocity: 5.0,    // Explosion speed. Set to 0 to drop them stationary.
             powerFlightTime: 800,       
             frictionRetained: 0.98,     
             pickupMaxSpeed: 3.5,        
@@ -200,7 +202,6 @@
             myRobot.speedBase = gameConfig.robotBaseSpeed + (stats.speed * gameConfig.robotSpeedPerStat); 
             myRobot.size = 20 + (stats.capacity * 3);    
             myRobot.emitterPower = gameConfig.ballBaseVelocity + (stats.fireRate * gameConfig.ballVelocityPerStat); 
-            
             myRobot.maxDodgeballs = gameConfig.capacityBaseAmmo + (stats.capacity * gameConfig.capacityPerStat); 
             
             if (myRobot.currentDodgeballs > myRobot.maxDodgeballs) myRobot.currentDodgeballs = myRobot.maxDodgeballs;
@@ -276,11 +277,19 @@
         window.releaseDodgeballs = function() {
             const canvas = document.getElementById('gameCanvas');
             const sphereRef = ref(db, 'spheres');
-            for (let i = 0; i < 10; i++) {
+            let count = Math.floor(gameConfig.adminSpawnCount);
+            let velocity = gameConfig.adminSpawnVelocity;
+
+            for (let i = 0; i < count; i++) {
                 const angle = Math.random() * Math.PI * 2;
-                const power = 3 + Math.random() * 5;
+                // If velocity is 0, power is 0. If > 0, give it a randomized kick.
+                const power = velocity > 0 ? (velocity / 2) + Math.random() * (velocity / 2) : 0;
+                
+                // Spread balls evenly down the center line so they don't stack on top of each other perfectly
+                const startY = (canvas.height / count) * i + (canvas.height / count) / 2;
+                
                 push(sphereRef, {
-                    x: canvas.width / 2, y: (canvas.height / 10) * i + 50,
+                    x: canvas.width / 2, y: startY,
                     vx: Math.cos(angle) * power, vy: Math.sin(angle) * power,
                     firedAt: Date.now()
                 });
@@ -309,7 +318,6 @@
             const radius = 8;
             const now = Date.now();
 
-            // 1. Move balls, apply friction and walls
             for (let i = 0; i < activeSpheres.length; i++) {
                 let s = activeSpheres[i];
                 let flightTime = now - s.firedAt;
@@ -335,22 +343,20 @@
                 if (s.y > canvas.height - radius) { s.y = canvas.height - radius; s.vy *= -1; }
             }
 
-            // 2. Ball-to-Ball Collisions (Only if BOTH are on the ground)
             for (let i = 0; i < activeSpheres.length; i++) {
                 let s1 = activeSpheres[i];
-                if ((now - s1.firedAt) <= gameConfig.powerFlightTime) continue; // s1 is in the air
+                if ((now - s1.firedAt) <= gameConfig.powerFlightTime) continue; 
 
                 for (let j = i + 1; j < activeSpheres.length; j++) {
                     let s2 = activeSpheres[j];
-                    if ((now - s2.firedAt) <= gameConfig.powerFlightTime) continue; // s2 is in the air
+                    if ((now - s2.firedAt) <= gameConfig.powerFlightTime) continue; 
 
                     let dx = s2.x - s1.x;
                     let dy = s2.y - s1.y;
                     let distance = Math.sqrt(dx * dx + dy * dy);
-                    let minDist = radius * 2; // 16px
+                    let minDist = radius * 2; 
 
                     if (distance < minDist && distance > 0) {
-                        // Positional correction (prevents them getting stuck together)
                         let overlap = minDist - distance;
                         let nx = dx / distance;
                         let ny = dy / distance;
@@ -361,7 +367,6 @@
                         s1.x -= pushX; s1.y -= pushY;
                         s2.x += pushX; s2.y += pushY;
                         
-                        // Elastic collision velocity transfer
                         let vxDiff = s1.vx - s2.vx;
                         let vyDiff = s1.vy - s2.vy;
                         let dotProduct = (vxDiff * nx) + (vyDiff * ny);
@@ -374,7 +379,6 @@
                 }
             }
 
-            // 3. Draw Balls and handle Pickups
             for (let i = activeSpheres.length - 1; i >= 0; i--) {
                 let s = activeSpheres[i];
                 let flightTime = now - s.firedAt;
@@ -396,23 +400,28 @@
 
                     if (dist <= radius) {
                         s.claimPending = true; 
+                        
+                        // Optimistic Update: Assume we get it to prevent rapid double-pickups
+                        myRobot.currentDodgeballs++;
+                        document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
+
                         runTransaction(ref(db, 'spheres/' + s.id + '/claimedBy'), (currentOwner) => {
                             if (currentOwner === null) return playerId; 
                             return; 
                         }).then((result) => {
                             if (result.committed && result.snapshot.val() === playerId) {
-                                myRobot.currentDodgeballs++;
-                                document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
                                 remove(ref(db, 'spheres/' + s.id));
                             } else {
+                                // We lost the race. Revert our optimistic update.
                                 s.claimPending = false; 
+                                myRobot.currentDodgeballs--;
+                                document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
                             }
                         });
                     }
                 }
             }
 
-            // Draw Players
             Object.keys(otherPlayers).forEach(id => {
                 if (id !== playerId) {
                     let p = otherPlayers[id];
