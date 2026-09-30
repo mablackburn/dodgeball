@@ -246,14 +246,13 @@
             }
         });
 
-        // Listen for Match State
         onValue(ref(db, 'gameState'), (snapshot) => {
             if (snapshot.exists()) {
                 let gs = snapshot.val();
                 currentGameState = gs.state;
                 countdownEnd = gs.timerEnd;
                 adminTriggerId = gs.adminId;
-                if (gs.state === 'countdown') adminHasSpawned = false; // Reset the trigger
+                if (gs.state === 'countdown') adminHasSpawned = false; 
             } else {
                 currentGameState = 'waiting';
             }
@@ -294,7 +293,9 @@
             if (myRobot.currentDodgeballs > myRobot.maxDodgeballs) myRobot.currentDodgeballs = myRobot.maxDodgeballs;
             
             let display = document.getElementById('ammo-display');
-            if (display) display.innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
+            if (display) {
+                display.innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
+            }
         }
 
         window.deployRobot = function() {
@@ -308,9 +309,10 @@
             canvas.height = 900;
 
             calculateRobotStats();
-            myRobot.currentDodgeballs = 0; 
+            // Start warmup with full ammo
+            myRobot.currentDodgeballs = myRobot.maxDodgeballs; 
             document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
-
+            
             myRobot.x = myRobot.color === '#ff4757' ? 200 : canvas.width - 200;
             myRobot.y = canvas.height / 2;
 
@@ -321,8 +323,8 @@
             window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
 
             canvas.addEventListener('mousedown', (e) => {
-                // Prevent shooting if the game hasn't officially started
-                if (currentGameState !== 'playing') return;
+                // Cannot shoot during the 5 second countdown freeze
+                if (currentGameState === 'countdown') return;
 
                 if (myRobot.currentDodgeballs > 0) {
                     const rect = canvas.getBoundingClientRect();
@@ -382,7 +384,7 @@
             set(ref(db, 'gameState'), {
                 state: 'countdown',
                 timerEnd: Date.now() + 5000,
-                adminId: playerId // Assigns this computer to be the one that releases the balls at 0
+                adminId: playerId 
             });
         }
 
@@ -395,8 +397,6 @@
             const sphereRef = ref(db, 'spheres');
             let count = Math.floor(gameConfig.adminSpawnCount);
             let velocity = gameConfig.adminSpawnVelocity;
-
-            // Hardcoded coordinates to fix the lobby-click bug forever
             const internalWidth = 1600;
             const internalHeight = 900;
 
@@ -422,14 +422,12 @@
             let nextX = myRobot.x;
             let nextY = myRobot.y;
 
-            // Only allow movement if NOT in countdown
             if (currentGameState !== 'countdown') {
                 if ((keys['w'] || keys['arrowup']) && myRobot.y > 0) nextY -= myRobot.speedBase;
                 if ((keys['s'] || keys['arrowdown']) && myRobot.y < canvas.height - myRobot.size) nextY += myRobot.speedBase;
                 if ((keys['a'] || keys['arrowleft']) && myRobot.x > 0) nextX -= myRobot.speedBase;
                 if ((keys['d'] || keys['arrowright']) && myRobot.x < canvas.width - myRobot.size) nextX += myRobot.speedBase;
             } else {
-                // Freeze the robot and drop their inventory
                 myRobot.currentDodgeballs = 0;
                 let display = document.getElementById('ammo-display');
                 if (display) display.innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
@@ -448,7 +446,6 @@
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw Background Center Line
             ctx.strokeStyle = gameConfig.centerWallActive ? '#ff4444' : 'white';
             ctx.lineWidth = gameConfig.centerWallActive ? 3 : 1;
             ctx.setLineDash([10, 15]);
@@ -576,7 +573,6 @@
             ctx.setLineDash([]);
             ctx.strokeRect(myRobot.x - 2, myRobot.y - 2, myRobot.size + 4, myRobot.size + 4);
 
-            // --- UI OVERLAYS ---
             if (currentGameState === 'countdown') {
                 let timeLeft = Math.ceil((countdownEnd - now) / 1000);
                 
