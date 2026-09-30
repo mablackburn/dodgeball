@@ -33,9 +33,9 @@
 
         #global-score { display: none; position: absolute; top: 15px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); padding: 15px 30px; border-radius: 10px; font-size: 2.5em; font-weight: bold; border: 2px solid #555; z-index: 10; pointer-events: none; }
         
-        #personal-hud { display: none; position: absolute; bottom: 20px; left: 20px; pointer-events: none; background: rgba(0,0,0,0.85); padding: 20px; border-radius: 10px; z-index: 10; border: 2px solid #555; width: 300px; }
+        #personal-hud { display: none; position: absolute; bottom: 20px; left: 20px; pointer-events: none; background: rgba(0,0,0,0.85); padding: 20px; border-radius: 10px; z-index: 10; border: 2px solid #555; width: 350px; }
         #personal-hud h3 { margin: 0 0 10px 0; color: #fff; font-size: 1.5em; border-bottom: 1px solid #444; padding-bottom: 5px; }
-        #ammo-display { color: #ffcc00; font-size: 1.4em; margin: 10px 0; font-weight: bold; }
+        #ammo-display { color: #ffcc00; font-size: 1.2em; margin: 10px 0; font-weight: bold; }
         .bar-container { width: 100%; height: 25px; background: #222; border: 2px solid #fff; border-radius: 5px; overflow: hidden; margin-top: 10px; position: relative; }
         #battery-bar { height: 100%; width: 100%; background: lime; transition: width 0.2s, background 0.2s; }
         .bar-label { position: absolute; width: 100%; text-align: center; top: 3px; font-weight: bold; color: black; text-shadow: 1px 1px 0px rgba(255,255,255,0.5); }
@@ -140,7 +140,8 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-app.js";
-        import { getDatabase, ref, set, push, onValue, onChildAdded, onChildRemoved, onDisconnect, remove, runTransaction } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-database.js";
+        // IMPORT UPDATE AND ONCHILDCHANGED FOR RICOCHET ENGINE
+        import { getDatabase, ref, set, push, update, onValue, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, remove, runTransaction } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-database.js";
 
         const firebaseConfig = {
           apiKey: "AIzaSyB3uYYcGIivcmIxrxJKGkbVP9JveKW0myM",
@@ -162,7 +163,7 @@
 
         const gameConfigDefaults = {
             centerWallActive: true,     
-            playerSmoothing: 0.15,      // NEW: LERP factor (lower = smoother glide, higher = fast/jerky)
+            playerSmoothing: 0.15,      
             adminSpawnCount: 15,        
             adminSpawnVelocity: 5.0,    
             powerFlightTime: 800,       
@@ -331,7 +332,7 @@
         const keys = {};
         
         let otherPlayers = {};
-        let renderPlayers = {}; // LERP Smoothing state
+        let renderPlayers = {}; 
         let activeSpheres = [];
 
         let myRobot = {
@@ -363,10 +364,26 @@
 
         function updateHUD() {
             let ammoDisplay = document.getElementById('ammo-display');
-            if (currentGameState === 'waiting') {
-                ammoDisplay.innerText = `Dodgeballs: WARMUP`;
+            let canvas = document.getElementById('gameCanvas');
+            
+            // Check if in recharge zone
+            let inRechargeZone = false;
+            if (myRobot.color === '#ff4757' && myRobot.x < 150) inRechargeZone = true;
+            if (myRobot.color === '#1e90ff' && myRobot.x > 1600 - 150 - myRobot.size) inRechargeZone = true;
+
+            // Visual feedback for Weapons Locked
+            if (inRechargeZone) {
+                ammoDisplay.innerText = `[ RECHARGE ZONE: WEAPONS LOCKED ]`;
+                ammoDisplay.style.color = '#ff4444';
+                canvas.style.cursor = 'not-allowed';
             } else {
-                ammoDisplay.innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
+                canvas.style.cursor = 'crosshair';
+                if (currentGameState === 'waiting') {
+                    ammoDisplay.innerText = `Dodgeballs: WARMUP`;
+                } else {
+                    ammoDisplay.innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
+                }
+                ammoDisplay.style.color = '#ffcc00';
             }
 
             let batPct = (myRobot.currentBattery / myRobot.maxBattery) * 100;
@@ -405,6 +422,12 @@
 
             canvas.addEventListener('mousedown', (e) => {
                 if (currentGameState === 'countdown' || myRobot.currentBattery <= 0) return;
+
+                // WEAPONS LOCK CHECK
+                let inRechargeZone = false;
+                if (myRobot.color === '#ff4757' && myRobot.x < 150) inRechargeZone = true;
+                if (myRobot.color === '#1e90ff' && myRobot.x > 1600 - 150 - myRobot.size) inRechargeZone = true;
+                if (inRechargeZone) return;
 
                 let isWarmup = (currentGameState === 'waiting');
                 let now = Date.now();
@@ -453,6 +476,18 @@
                     firedAt: data.firedAt || Date.now(),
                     claimPending: false
                 });
+            });
+
+            // NEW: Listen for Ricochets from other players
+            onChildChanged(ref(db, 'spheres'), (snapshot) => {
+                const data = snapshot.val();
+                let index = activeSpheres.findIndex(s => s.id === snapshot.key);
+                if (index !== -1) {
+                    activeSpheres[index].x = data.x;
+                    activeSpheres[index].y = data.y;
+                    activeSpheres[index].vx = data.vx;
+                    activeSpheres[index].vy = data.vy;
+                }
             });
 
             onChildRemoved(ref(db, 'spheres'), (snapshot) => {
@@ -559,7 +594,6 @@
             const radius = 8;
             let bounce = gameConfig.wallBounceRetained;
 
-            // Ball Physics
             for (let i = 0; i < activeSpheres.length; i++) {
                 let s = activeSpheres[i];
                 let flightTime = now - s.firedAt;
@@ -628,14 +662,18 @@
                 else if (s.y > myRobot.y + myRobot.size) testY = myRobot.y + myRobot.size;
                 let dist = Math.sqrt(Math.pow(s.x - testX, 2) + Math.pow(s.y - testY, 2));
 
-                // --- NEW RICOCHET ENGINE ---
+                // --- NEW ROBUST RICOCHET ENGINE ---
                 if (isDangerous && s.color !== myRobot.color && s.color !== '#ffcc00' && currentGameState === 'playing' && !myRobot.isInvulnerable) {
                     if (dist <= radius) {
                         
-                        // 1. Calculate Exact Ricochet Angle
-                        let nx = (s.x - testX) / dist;
-                        let ny = (s.y - testY) / dist;
-                        if (dist === 0) { nx = 1; ny = 0; }
+                        // Safely calculate geometric bounce
+                        let nx, ny;
+                        if (dist === 0) { 
+                            nx = 1; ny = 0; // Fixes NaN crash
+                        } else {
+                            nx = (s.x - testX) / dist;
+                            ny = (s.y - testY) / dist;
+                        }
                         
                         let dotProduct = (s.vx * nx) + (s.vy * ny);
                         let newVx = s.vx; let newVy = s.vy;
@@ -646,30 +684,28 @@
                             newVx = -s.vx; newVy = -s.vy;
                         }
 
-                        // 2. Kill the old ball and spawn the ricochet immediately
-                        remove(ref(db, 'spheres/' + s.id));
-                        activeSpheres.splice(i, 1);
-                        
-                        push(ref(db, 'spheres'), {
-                            x: s.x + (nx * 3), // Nudge out of hitbox slightly
-                            y: s.y + (ny * 3),
+                        // Apply bounce instantly so it looks smooth to the player being hit
+                        s.vx = newVx;
+                        s.vy = newVy;
+                        s.x += newVx; // Step it forward along the new path
+                        s.y += newVy;
+
+                        // Inform the server about the exact bounce so everyone else sees it
+                        update(ref(db, 'spheres/' + s.id), {
                             vx: newVx,
                             vy: newVy,
-                            color: s.color, // Keeps enemy color so it can hit others!
-                            firedAt: s.firedAt // Preserves original flight timer
+                            x: s.x,
+                            y: s.y
                         });
-                        
-                        // 3. Take Damage
+
                         myRobot.currentBattery -= gameConfig.hitPenalty;
                         if (myRobot.currentBattery < 0) myRobot.currentBattery = 0;
 
-                        // 4. Update Scoreboard
                         let enemyTeam = myRobot.color === '#ff4757' ? 'blue' : 'red';
                         runTransaction(ref(db, `gameState/score/${enemyTeam}`), (currentScore) => {
                             return (currentScore || 0) + 1;
                         });
 
-                        // 5. Trigger I-Frames
                         myRobot.isInvulnerable = true;
                         setTimeout(() => { myRobot.isInvulnerable = false; }, 1000);
                         continue;
@@ -679,8 +715,12 @@
                 if (!isDangerous && currentSpeed < gameConfig.pickupMaxSpeed && myRobot.currentDodgeballs < myRobot.maxDodgeballs && !s.claimPending) {
                     if (dist <= radius) {
                         s.claimPending = true; 
-                        if (currentGameState !== 'waiting') myRobot.currentDodgeballs++;
                         
+                        if (currentGameState !== 'waiting') {
+                            myRobot.currentDodgeballs++;
+                            document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
+                        }
+
                         runTransaction(ref(db, 'spheres/' + s.id + '/claimedBy'), (currentOwner) => {
                             if (currentOwner === null) return playerId; 
                             return; 
@@ -689,21 +729,22 @@
                                 remove(ref(db, 'spheres/' + s.id));
                             } else {
                                 s.claimPending = false; 
-                                if (currentGameState !== 'waiting') myRobot.currentDodgeballs--;
+                                if (currentGameState !== 'waiting') {
+                                    myRobot.currentDodgeballs--;
+                                    document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
+                                }
                             }
                         });
                     }
                 }
             }
 
-            // --- LERP SMOOTHING FOR OTHER PLAYERS ---
             Object.keys(otherPlayers).forEach(id => {
                 if (id !== playerId) {
                     let target = otherPlayers[id];
                     
                     if (!renderPlayers[id]) renderPlayers[id] = { ...target };
                     
-                    // Slide smoothly toward the new coordinate based on the Dev Console setting
                     let smoothing = gameConfig.playerSmoothing;
                     renderPlayers[id].x += (target.x - renderPlayers[id].x) * smoothing;
                     renderPlayers[id].y += (target.y - renderPlayers[id].y) * smoothing;
@@ -728,6 +769,7 @@
             else ctx.fillStyle = myRobot.color;
             
             ctx.fillRect(myRobot.x, myRobot.y, myRobot.size, myRobot.size);
+            
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
             ctx.setLineDash([]);
             ctx.strokeRect(myRobot.x - 2, myRobot.y - 2, myRobot.size + 4, myRobot.size + 4);
