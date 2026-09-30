@@ -31,7 +31,6 @@
             max-width: 100vw; max-height: 100vh; aspect-ratio: 16 / 9; box-shadow: 0 0 20px rgba(0,0,0,0.8);
         }
 
-        /* HUD STYLING */
         #global-score { display: none; position: absolute; top: 15px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); padding: 15px 30px; border-radius: 10px; font-size: 2.5em; font-weight: bold; border: 2px solid #555; z-index: 10; pointer-events: none; }
         
         #personal-hud { display: none; position: absolute; bottom: 20px; left: 20px; pointer-events: none; background: rgba(0,0,0,0.85); padding: 20px; border-radius: 10px; z-index: 10; border: 2px solid #555; width: 300px; }
@@ -163,6 +162,7 @@
 
         const gameConfigDefaults = {
             centerWallActive: true,     
+            playerSmoothing: 0.15,      // NEW: LERP factor (lower = smoother glide, higher = fast/jerky)
             adminSpawnCount: 15,        
             adminSpawnVelocity: 5.0,    
             powerFlightTime: 800,       
@@ -179,15 +179,16 @@
             cooldownPerStat: 100,       
             capacityBaseAmmo: 2.0,      
             capacityPerStat: 2.0,
-            batteryBase: 100,           // Base energy
-            batteryPerStat: 25,         // Energy added per point
-            hitPenalty: 40,             // Battery lost when hit by enemy ball
-            rechargeRate: 0.5           // Battery regained per frame in the back zone
+            batteryBase: 100,           
+            batteryPerStat: 25,         
+            hitPenalty: 40,             
+            rechargeRate: 0.5           
         };
 
         let gameConfig = { ...gameConfigDefaults };
 
         const configRanges = {
+            playerSmoothing: { min: 0.01, max: 1.0, step: 0.01 },
             adminSpawnCount: { min: 1, max: 50, step: 1 },
             adminSpawnVelocity: { min: 0, max: 20, step: 0.5 },
             powerFlightTime: { min: 100, max: 2500, step: 50 },
@@ -283,7 +284,6 @@
                 adminTriggerId = gs.adminId;
                 if (gs.state === 'countdown') adminHasSpawned = false; 
                 
-                // Update Global Scoreboard
                 if (gs.score) {
                     document.getElementById('score-red').innerText = gs.score.red || 0;
                     document.getElementById('score-blue').innerText = gs.score.blue || 0;
@@ -331,6 +331,7 @@
         const keys = {};
         
         let otherPlayers = {};
+        let renderPlayers = {}; // LERP Smoothing state
         let activeSpheres = [];
 
         let myRobot = {
@@ -346,16 +347,12 @@
             myRobot.speedBase = gameConfig.robotBaseSpeed + (stats.speed * gameConfig.robotSpeedPerStat); 
             myRobot.size = 20 + (stats.capacity * 3);    
             myRobot.emitterPower = gameConfig.ballBaseVelocity + (stats.velocity * gameConfig.ballVelocityPerStat); 
-            
             myRobot.fireCooldown = Math.max(gameConfig.cooldownBase - (stats.fireRate * gameConfig.cooldownPerStat), 50); 
-            
             myRobot.maxDodgeballs = gameConfig.capacityBaseAmmo + (stats.capacity * gameConfig.capacityPerStat); 
             if (myRobot.currentDodgeballs > myRobot.maxDodgeballs) myRobot.currentDodgeballs = myRobot.maxDodgeballs;
             
-            // Calculate Battery Max
             let previousMax = myRobot.maxBattery;
             myRobot.maxBattery = gameConfig.batteryBase + (stats.battery * gameConfig.batteryPerStat);
-            // If they just joined, fill it up
             if (myRobot.currentBattery === undefined || myRobot.currentBattery === previousMax) {
                 myRobot.currentBattery = myRobot.maxBattery;
             }
@@ -372,7 +369,6 @@
                 ammoDisplay.innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
             }
 
-            // Update Battery Bar
             let batPct = (myRobot.currentBattery / myRobot.maxBattery) * 100;
             let bar = document.getElementById('battery-bar');
             bar.style.width = batPct + '%';
@@ -437,7 +433,7 @@
                             y: myRobot.y + myRobot.size/2,
                             vx: Math.cos(angle) * myRobot.emitterPower,
                             vy: Math.sin(angle) * myRobot.emitterPower,
-                            color: myRobot.color, // Stamp ball with team color
+                            color: myRobot.color, 
                             firedAt: Date.now() 
                         });
                     }
@@ -473,7 +469,7 @@
                 state: 'countdown',
                 timerEnd: Date.now() + 5000,
                 adminId: playerId,
-                score: { red: 0, blue: 0 } // Reset the scoreboard
+                score: { red: 0, blue: 0 } 
             });
         }
 
@@ -497,7 +493,7 @@
                 push(sphereRef, {
                     x: internalWidth / 2, y: startY,
                     vx: Math.cos(angle) * power, vy: Math.sin(angle) * power,
-                    color: '#ffcc00', // Neutral admin ball
+                    color: '#ffcc00', 
                     firedAt: Date.now()
                 });
             }
@@ -512,10 +508,9 @@
             let nextX = myRobot.x;
             let nextY = myRobot.y;
             
-            // BATTERY EFFECT ON MOVEMENT
             let activeSpeed = myRobot.speedBase;
             if (myRobot.currentBattery <= 0) {
-                activeSpeed = myRobot.speedBase * 0.2; // Power failure crawl
+                activeSpeed = myRobot.speedBase * 0.2; 
             }
 
             if (currentGameState !== 'countdown') {
@@ -536,7 +531,6 @@
             myRobot.x = nextX;
             myRobot.y = nextY;
 
-            // BATTERY RECHARGE LOGIC (Back 150px of the arena)
             let inRechargeZone = false;
             if (myRobot.color === '#ff4757' && myRobot.x < 150) inRechargeZone = true;
             if (myRobot.color === '#1e90ff' && myRobot.x > canvas.width - 150 - myRobot.size) inRechargeZone = true;
@@ -549,13 +543,11 @@
             updateHUD();
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw Recharge Zones
             ctx.fillStyle = 'rgba(255, 71, 87, 0.1)';
             ctx.fillRect(0, 0, 150, canvas.height);
             ctx.fillStyle = 'rgba(30, 144, 255, 0.1)';
             ctx.fillRect(canvas.width - 150, 0, 150, canvas.height);
 
-            // Draw Center Line
             ctx.strokeStyle = gameConfig.centerWallActive ? '#ff4444' : 'white';
             ctx.lineWidth = gameConfig.centerWallActive ? 3 : 1;
             ctx.setLineDash([10, 15]);
@@ -590,7 +582,6 @@
                 if (s.y > canvas.height - radius) { s.y = canvas.height - radius; s.vy *= -bounce; s.vx *= bounce; }
             }
 
-            // Ball-to-Ball Collisions
             for (let i = 0; i < activeSpheres.length; i++) {
                 let s1 = activeSpheres[i];
                 if ((now - s1.firedAt) <= gameConfig.powerFlightTime) continue; 
@@ -619,20 +610,17 @@
                 }
             }
 
-            // Draw Balls, Pickups, and HIT DETECTION
             for (let i = activeSpheres.length - 1; i >= 0; i--) {
                 let s = activeSpheres[i];
                 let flightTime = now - s.firedAt;
                 let currentSpeed = Math.sqrt(s.vx*s.vx + s.vy*s.vy);
                 let isDangerous = flightTime <= gameConfig.powerFlightTime;
 
-                // Color dangerous balls to match their team, yellow when dead/safe
                 ctx.fillStyle = isDangerous ? s.color : '#ffcc00'; 
                 ctx.beginPath();
                 ctx.arc(s.x, s.y, radius, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Rectangle hit test data
                 let testX = s.x; let testY = s.y;
                 if (s.x < myRobot.x) testX = myRobot.x;
                 else if (s.x > myRobot.x + myRobot.size) testX = myRobot.x + myRobot.size;
@@ -640,35 +628,57 @@
                 else if (s.y > myRobot.y + myRobot.size) testY = myRobot.y + myRobot.size;
                 let dist = Math.sqrt(Math.pow(s.x - testX, 2) + Math.pow(s.y - testY, 2));
 
-                // HIT DETECTION (I got hit!)
+                // --- NEW RICOCHET ENGINE ---
                 if (isDangerous && s.color !== myRobot.color && s.color !== '#ffcc00' && currentGameState === 'playing' && !myRobot.isInvulnerable) {
                     if (dist <= radius) {
-                        // 1. Delete ball
+                        
+                        // 1. Calculate Exact Ricochet Angle
+                        let nx = (s.x - testX) / dist;
+                        let ny = (s.y - testY) / dist;
+                        if (dist === 0) { nx = 1; ny = 0; }
+                        
+                        let dotProduct = (s.vx * nx) + (s.vy * ny);
+                        let newVx = s.vx; let newVy = s.vy;
+                        if (dotProduct < 0) {
+                            newVx = s.vx - 2 * dotProduct * nx;
+                            newVy = s.vy - 2 * dotProduct * ny;
+                        } else {
+                            newVx = -s.vx; newVy = -s.vy;
+                        }
+
+                        // 2. Kill the old ball and spawn the ricochet immediately
                         remove(ref(db, 'spheres/' + s.id));
                         activeSpheres.splice(i, 1);
                         
-                        // 2. Battery Damage
+                        push(ref(db, 'spheres'), {
+                            x: s.x + (nx * 3), // Nudge out of hitbox slightly
+                            y: s.y + (ny * 3),
+                            vx: newVx,
+                            vy: newVy,
+                            color: s.color, // Keeps enemy color so it can hit others!
+                            firedAt: s.firedAt // Preserves original flight timer
+                        });
+                        
+                        // 3. Take Damage
                         myRobot.currentBattery -= gameConfig.hitPenalty;
                         if (myRobot.currentBattery < 0) myRobot.currentBattery = 0;
 
-                        // 3. Give Enemy Team a Point
+                        // 4. Update Scoreboard
                         let enemyTeam = myRobot.color === '#ff4757' ? 'blue' : 'red';
                         runTransaction(ref(db, `gameState/score/${enemyTeam}`), (currentScore) => {
                             return (currentScore || 0) + 1;
                         });
 
-                        // 4. Trigger Invulnerability Frames
+                        // 5. Trigger I-Frames
                         myRobot.isInvulnerable = true;
                         setTimeout(() => { myRobot.isInvulnerable = false; }, 1000);
                         continue;
                     }
                 }
 
-                // PICKUP LOGIC (Safe balls)
                 if (!isDangerous && currentSpeed < gameConfig.pickupMaxSpeed && myRobot.currentDodgeballs < myRobot.maxDodgeballs && !s.claimPending) {
                     if (dist <= radius) {
                         s.claimPending = true; 
-                        
                         if (currentGameState !== 'waiting') myRobot.currentDodgeballs++;
                         
                         runTransaction(ref(db, 'spheres/' + s.id + '/claimedBy'), (currentOwner) => {
@@ -686,32 +696,42 @@
                 }
             }
 
-            // Draw Other Players
+            // --- LERP SMOOTHING FOR OTHER PLAYERS ---
             Object.keys(otherPlayers).forEach(id => {
                 if (id !== playerId) {
-                    let p = otherPlayers[id];
-                    ctx.fillStyle = p.color;
+                    let target = otherPlayers[id];
                     
-                    // Faint pulsing for enemies who are in i-frames or out of power
+                    if (!renderPlayers[id]) renderPlayers[id] = { ...target };
+                    
+                    // Slide smoothly toward the new coordinate based on the Dev Console setting
+                    let smoothing = gameConfig.playerSmoothing;
+                    renderPlayers[id].x += (target.x - renderPlayers[id].x) * smoothing;
+                    renderPlayers[id].y += (target.y - renderPlayers[id].y) * smoothing;
+                    
+                    renderPlayers[id].size = target.size;
+                    renderPlayers[id].color = target.color;
+                    renderPlayers[id].isInvulnerable = target.isInvulnerable;
+
+                    let p = renderPlayers[id];
+                    ctx.fillStyle = p.color;
                     if (p.isInvulnerable) ctx.globalAlpha = 0.3;
                     ctx.fillRect(p.x, p.y, p.size, p.size);
                     ctx.globalAlpha = 1.0;
                 }
             });
 
-            // Draw My Robot (Flash white if invulnerable)
-            if (myRobot.isInvulnerable && Math.floor(now / 100) % 2 === 0) {
-                ctx.fillStyle = 'white';
-            } else {
-                ctx.fillStyle = myRobot.color;
-            }
-            ctx.fillRect(myRobot.x, myRobot.y, myRobot.size, myRobot.size);
+            Object.keys(renderPlayers).forEach(id => {
+                if (!otherPlayers[id]) delete renderPlayers[id];
+            });
+
+            if (myRobot.isInvulnerable && Math.floor(now / 100) % 2 === 0) ctx.fillStyle = 'white';
+            else ctx.fillStyle = myRobot.color;
             
+            ctx.fillRect(myRobot.x, myRobot.y, myRobot.size, myRobot.size);
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
             ctx.setLineDash([]);
             ctx.strokeRect(myRobot.x - 2, myRobot.y - 2, myRobot.size + 4, myRobot.size + 4);
 
-            // Overlays
             if (currentGameState === 'countdown') {
                 let timeLeft = Math.ceil((countdownEnd - now) / 1000);
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
