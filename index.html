@@ -7,10 +7,11 @@
     <style>
         body { margin: 0; padding: 0; background-color: #0d0f18; color: white; font-family: monospace; overflow: hidden; }
         
-        #lobby { padding: 20px; max-width: 600px; margin: 0 auto; margin-top: 50px; }
+        #lobby { padding: 20px; max-width: 650px; margin: 0 auto; margin-top: 50px; }
         .stat-row { display: flex; justify-content: space-between; margin-bottom: 15px; align-items: center; }
         button { background: #e94560; color: white; border: none; padding: 10px 15px; cursor: pointer; border-radius: 5px; }
         button:hover { background: #d03050; }
+        .stat-btn { font-weight: bold; width: 35px; height: 35px; padding: 0; }
         #deploy-btn { width: 100%; font-size: 1.2em; margin-top: 20px; }
         
         #gameCanvas { 
@@ -55,38 +56,46 @@
 
     <div id="lobby">
         <h1>Engineering Phase</h1>
-        <p>Power Slots Available: <span id="slots">6</span>/10</p>
+        <p>Power Slots Available: <span id="slots">20</span>/25 (Max 10 per stat)</p>
         
         <div class="stat-row">
             <span>Chassis Mobility (Speed)</span>
             <div>
-                <button onclick="changeStat('speed', -1)">-</button>
-                <span id="val-speed" style="margin: 0 10px;">1</span>
-                <button onclick="changeStat('speed', 1)">+</button>
+                <button class="stat-btn" onclick="changeStat('speed', -1)">-</button>
+                <span id="val-speed" style="display: inline-block; width: 30px; text-align: center; font-size: 1.2em;">1</span>
+                <button class="stat-btn" onclick="changeStat('speed', 1)">+</button>
             </div>
         </div>
         <div class="stat-row">
-            <span>Pneumatic Emitter (Velocity)</span>
+            <span>Pneumatic Pressure (Velocity)</span>
             <div>
-                <button onclick="changeStat('fireRate', -1)">-</button>
-                <span id="val-fireRate" style="margin: 0 10px;">1</span>
-                <button onclick="changeStat('fireRate', 1)">+</button>
+                <button class="stat-btn" onclick="changeStat('velocity', -1)">-</button>
+                <span id="val-velocity" style="display: inline-block; width: 30px; text-align: center; font-size: 1.2em;">1</span>
+                <button class="stat-btn" onclick="changeStat('velocity', 1)">+</button>
+            </div>
+        </div>
+        <div class="stat-row">
+            <span>Emitter Cycle (Fire Rate Cooldown)</span>
+            <div>
+                <button class="stat-btn" onclick="changeStat('fireRate', -1)">-</button>
+                <span id="val-fireRate" style="display: inline-block; width: 30px; text-align: center; font-size: 1.2em;">1</span>
+                <button class="stat-btn" onclick="changeStat('fireRate', 1)">+</button>
             </div>
         </div>
         <div class="stat-row">
             <span>Asset Capacity (Dodgeball limit)</span>
             <div>
-                <button onclick="changeStat('capacity', -1)">-</button>
-                <span id="val-capacity" style="margin: 0 10px;">1</span>
-                <button onclick="changeStat('capacity', 1)">+</button>
+                <button class="stat-btn" onclick="changeStat('capacity', -1)">-</button>
+                <span id="val-capacity" style="display: inline-block; width: 30px; text-align: center; font-size: 1.2em;">1</span>
+                <button class="stat-btn" onclick="changeStat('capacity', 1)">+</button>
             </div>
         </div>
         <div class="stat-row">
-            <span>Battery Reserves (Energy)</span>
+            <span>Battery Reserves (Energy limit)</span>
             <div>
-                <button onclick="changeStat('battery', -1)">-</button>
-                <span id="val-battery" style="margin: 0 10px;">1</span>
-                <button onclick="changeStat('battery', 1)">+</button>
+                <button class="stat-btn" onclick="changeStat('battery', -1)">-</button>
+                <span id="val-battery" style="display: inline-block; width: 30px; text-align: center; font-size: 1.2em;">1</span>
+                <button class="stat-btn" onclick="changeStat('battery', 1)">+</button>
             </div>
         </div>
 
@@ -136,6 +145,7 @@
         let adminTriggerId = null;
         let adminHasSpawned = false;
 
+        // --- THE "OFFICIAL" DEFAULTS ---
         const gameConfigDefaults = {
             centerWallActive: true,     
             adminSpawnCount: 15,        
@@ -149,6 +159,8 @@
             robotSpeedPerStat: 0.5,     
             ballBaseVelocity: 6.0,      
             ballVelocityPerStat: 2.5,   
+            cooldownBase: 1200,         // Base milliseconds between shots (1.2 seconds)
+            cooldownPerStat: 100,       // MS subtracted per stat point 
             capacityBaseAmmo: 2.0,      
             capacityPerStat: 2.0        
         };
@@ -167,6 +179,8 @@
             robotSpeedPerStat: { min: 0.1, max: 3, step: 0.1 },
             ballBaseVelocity: { min: 2, max: 15, step: 0.5 },
             ballVelocityPerStat: { min: 0.5, max: 5, step: 0.1 },
+            cooldownBase: { min: 200, max: 2000, step: 50 },
+            cooldownPerStat: { min: 10, max: 300, step: 10 },
             capacityBaseAmmo: { min: 1, max: 10, step: 1 },
             capacityPerStat: { min: 1, max: 5, step: 1 }
         };
@@ -258,12 +272,19 @@
             }
         });
 
-        const MAX_POINTS = 10;
-        let stats = { speed: 1, fireRate: 1, capacity: 1, battery: 1 };
+        // --- NEW POINT LIMITS ---
+        const MAX_POINTS = 25;
+        const MAX_STAT_VALUE = 10;
+        let stats = { speed: 1, velocity: 1, fireRate: 1, capacity: 1, battery: 1 };
         
         window.changeStat = function(stat, change) {
-            let totalUsed = stats.speed + stats.fireRate + stats.capacity + stats.battery;
+            let totalUsed = stats.speed + stats.velocity + stats.fireRate + stats.capacity + stats.battery;
+            
+            // Prevent going over total budget
             if (change > 0 && totalUsed >= MAX_POINTS) return;
+            // Prevent going over individual stat cap (10)
+            if (change > 0 && stats[stat] >= MAX_STAT_VALUE) return;
+            // Prevent dropping below 1
             if (stats[stat] + change < 1) return; 
             
             stats[stat] += change;
@@ -281,19 +302,25 @@
         let myRobot = {
             x: 0, y: 0, size: 20, 
             speedBase: 0, emitterPower: 0, maxDodgeballs: 0, currentDodgeballs: 0, 
+            fireCooldown: 1000, lastFiredTime: 0,
             color: Math.random() > 0.5 ? '#ff4757' : '#1e90ff' 
         };
 
         function calculateRobotStats() {
             myRobot.speedBase = gameConfig.robotBaseSpeed + (stats.speed * gameConfig.robotSpeedPerStat); 
             myRobot.size = 20 + (stats.capacity * 3);    
-            myRobot.emitterPower = gameConfig.ballBaseVelocity + (stats.fireRate * gameConfig.ballVelocityPerStat); 
+            myRobot.emitterPower = gameConfig.ballBaseVelocity + (stats.velocity * gameConfig.ballVelocityPerStat); 
+            
+            // Calculate Fire Rate Cooldown (Prevent dropping below 50ms)
+            let rawCooldown = gameConfig.cooldownBase - (stats.fireRate * gameConfig.cooldownPerStat);
+            myRobot.fireCooldown = Math.max(rawCooldown, 50); 
+
             myRobot.maxDodgeballs = gameConfig.capacityBaseAmmo + (stats.capacity * gameConfig.capacityPerStat); 
             
             if (myRobot.currentDodgeballs > myRobot.maxDodgeballs) myRobot.currentDodgeballs = myRobot.maxDodgeballs;
             
             let display = document.getElementById('ammo-display');
-            if (display) {
+            if (display && currentGameState !== 'waiting') {
                 display.innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
             }
         }
@@ -309,7 +336,6 @@
             canvas.height = 900;
 
             calculateRobotStats();
-            // Start warmup with full ammo
             myRobot.currentDodgeballs = myRobot.maxDodgeballs; 
             document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
             
@@ -323,32 +349,44 @@
             window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
 
             canvas.addEventListener('mousedown', (e) => {
-                // Cannot shoot during the 5 second countdown freeze
                 if (currentGameState === 'countdown') return;
 
-                if (myRobot.currentDodgeballs > 0) {
-                    const rect = canvas.getBoundingClientRect();
-                    const scaleX = canvas.width / rect.width;
-                    const scaleY = canvas.height / rect.height;
-                    
-                    const clickX = (e.clientX - rect.left) * scaleX;
-                    const clickY = (e.clientY - rect.top) * scaleY;
+                let isWarmup = (currentGameState === 'waiting');
+                let now = Date.now();
 
-                    const dx = clickX - (myRobot.x + myRobot.size/2);
-                    const dy = clickY - (myRobot.y + myRobot.size/2);
-                    const angle = Math.atan2(dy, dx);
+                // COOLDOWN CHECK
+                if (now - myRobot.lastFiredTime >= myRobot.fireCooldown) {
 
-                    myRobot.currentDodgeballs--;
-                    document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
+                    if (isWarmup || myRobot.currentDodgeballs > 0) {
+                        
+                        // Lock the trigger
+                        myRobot.lastFiredTime = now;
 
-                    const sphereRef = ref(db, 'spheres');
-                    push(sphereRef, {
-                        x: myRobot.x + myRobot.size/2,
-                        y: myRobot.y + myRobot.size/2,
-                        vx: Math.cos(angle) * myRobot.emitterPower,
-                        vy: Math.sin(angle) * myRobot.emitterPower,
-                        firedAt: Date.now() 
-                    });
+                        const rect = canvas.getBoundingClientRect();
+                        const scaleX = canvas.width / rect.width;
+                        const scaleY = canvas.height / rect.height;
+                        
+                        const clickX = (e.clientX - rect.left) * scaleX;
+                        const clickY = (e.clientY - rect.top) * scaleY;
+
+                        const dx = clickX - (myRobot.x + myRobot.size/2);
+                        const dy = clickY - (myRobot.y + myRobot.size/2);
+                        const angle = Math.atan2(dy, dx);
+
+                        if (!isWarmup) {
+                            myRobot.currentDodgeballs--;
+                            document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
+                        }
+
+                        const sphereRef = ref(db, 'spheres');
+                        push(sphereRef, {
+                            x: myRobot.x + myRobot.size/2,
+                            y: myRobot.y + myRobot.size/2,
+                            vx: Math.cos(angle) * myRobot.emitterPower,
+                            vy: Math.sin(angle) * myRobot.emitterPower,
+                            firedAt: Date.now() 
+                        });
+                    }
                 }
             });
 
@@ -421,6 +459,11 @@
 
             let nextX = myRobot.x;
             let nextY = myRobot.y;
+
+            if (currentGameState === 'waiting') {
+                let display = document.getElementById('ammo-display');
+                if (display) display.innerText = `Dodgeballs: WARMUP (Infinite)`;
+            }
 
             if (currentGameState !== 'countdown') {
                 if ((keys['w'] || keys['arrowup']) && myRobot.y > 0) nextY -= myRobot.speedBase;
@@ -539,8 +582,10 @@
                     if (dist <= radius) {
                         s.claimPending = true; 
                         
-                        myRobot.currentDodgeballs++;
-                        document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
+                        if (currentGameState !== 'waiting') {
+                            myRobot.currentDodgeballs++;
+                            document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
+                        }
 
                         runTransaction(ref(db, 'spheres/' + s.id + '/claimedBy'), (currentOwner) => {
                             if (currentOwner === null) return playerId; 
@@ -550,8 +595,10 @@
                                 remove(ref(db, 'spheres/' + s.id));
                             } else {
                                 s.claimPending = false; 
-                                myRobot.currentDodgeballs--;
-                                document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
+                                if (currentGameState !== 'waiting') {
+                                    myRobot.currentDodgeballs--;
+                                    document.getElementById('ammo-display').innerText = `Dodgeballs: ${myRobot.currentDodgeballs} / ${myRobot.maxDodgeballs}`;
+                                }
                             }
                         });
                     }
