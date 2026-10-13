@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shortcut Master</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Nunito', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            margin: 0;
+            user-select: none; /* Prevent accidental text selection */
+            overflow: hidden; /* Keep it contained like an app */
+        }
+        
+        .key-cap {
+            background-color: #f8fafc;
+            border-bottom-width: 6px;
+            border-bottom-color: #cbd5e1;
+            transition: all 0.1s ease;
+        }
+
+        .view-container {
+            display: none;
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+        .view-container.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0.9); opacity: 0; }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        @keyframes successBounce {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .animate-pop { animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        .animate-success { animation: successBounce 0.5s ease; }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4">
+
+    <div id="view-menu" class="view-container active flex-col items-center justify-center w-full max-w-3xl">
+        <div class="bg-white rounded-3xl shadow-2xl p-10 text-center w-full border-4 border-indigo-300">
+            <div class="mb-8">
+                <span class="text-6xl mb-4 block">⌨️</span>
+                <h1 class="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600 mb-2">Shortcut Master</h1>
+                <p class="text-xl text-slate-500 font-bold">Level up your Chromebook skills!</p>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-6 justify-center mt-10">
+                <button onclick="startMode('learn')" class="group relative px-8 py-4 bg-emerald-500 text-white text-2xl font-bold rounded-2xl border-b-8 border-emerald-700 hover:border-b-4 hover:translate-y-1 transition-all">
+                    <span class="block">📖 Learn Mode</span>
+                    <span class="text-sm font-normal opacity-80 block mt-1">Interactive Tutorial</span>
+                </button>
+                
+                <button onclick="startMode('quiz')" class="group relative px-8 py-4 bg-amber-500 text-white text-2xl font-bold rounded-2xl border-b-8 border-amber-700 hover:border-b-4 hover:translate-y-1 transition-all">
+                    <span class="block">🎮 Quiz Mode</span>
+                    <span class="text-sm font-normal opacity-80 block mt-1">Test your memory</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-learn" class="view-container flex-col items-center w-full max-w-3xl">
+        <div class="w-full flex justify-between items-center mb-6 text-white">
+            <button onclick="showMenu()" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-xl font-bold backdrop-blur-sm transition-all">← Back to Menu</button>
+            <div class="text-xl font-bold bg-white/20 px-4 py-2 rounded-xl backdrop-blur-sm">Progress: <span id="learn-progress">1/10</span></div>
+        </div>
+
+        <div id="learn-card" class="bg-white rounded-3xl shadow-2xl p-8 w-full border-4 border-indigo-300 relative text-center">
+            <div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-indigo-500 text-white px-6 py-2 rounded-full font-bold shadow-lg border-2 border-indigo-200">
+                Learn Mode
+            </div>
+
+            <h2 id="learn-action" class="text-4xl font-black text-indigo-900 mt-4 mb-2">Action</h2>
+            <p id="learn-desc" class="text-lg text-slate-600 mb-8 font-semibold">Description</p>
+
+            <div class="bg-slate-100 rounded-2xl p-6 mb-8 border-2 border-slate-200">
+                <p class="text-slate-500 font-bold mb-4">Press these keys to advance:</p>
+                <div id="learn-keys-container" class="flex flex-wrap items-center justify-center gap-4 text-3xl font-black">
+                    <!-- Keys will be dynamically injected here -->
+                </div>
+            </div>
+
+            <div id="learn-tracker" class="bg-indigo-50 border-2 border-indigo-200 text-indigo-800 rounded-xl p-4 font-bold text-xl transition-colors">
+                Currently pressing: <span id="learn-active-keys" class="text-indigo-600 ml-2">None</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-quiz" class="view-container flex-col items-center w-full max-w-3xl">
+        <div class="w-full flex justify-between items-center mb-6 text-white">
+            <button onclick="showMenu()" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-xl font-bold backdrop-blur-sm transition-all">← Back to Menu</button>
+            <div class="text-xl font-bold bg-white/20 px-4 py-2 rounded-xl backdrop-blur-sm">Score: <span id="quiz-score" class="text-amber-300">0</span></div>
+        </div>
+
+        <div id="quiz-card" class="bg-white rounded-3xl shadow-2xl p-8 w-full border-4 border-amber-400 relative text-center">
+            <div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-amber-500 text-white px-6 py-2 rounded-full font-bold shadow-lg border-2 border-amber-200">
+                Quiz Mode
+            </div>
+
+            <p class="text-slate-500 font-bold mt-4 mb-2 uppercase tracking-wide">Perform the shortcut for:</p>
+            <h2 id="quiz-action" class="text-5xl font-black text-slate-800 mb-8">Action</h2>
+
+            <div class="bg-slate-50 rounded-2xl p-8 mb-8 border-2 border-dashed border-slate-300">
+                <p id="quiz-keys-hint" class="text-slate-400 font-bold text-xl">❓ + ❓</p>
+            </div>
+
+            <div id="quiz-tracker" class="bg-amber-50 border-2 border-amber-200 text-amber-800 rounded-xl p-4 font-bold text-xl transition-colors">
+                Currently pressing: <span id="quiz-active-keys" class="text-amber-600 ml-2">None</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-complete" class="view-container flex-col items-center justify-center w-full max-w-3xl">
+        <div class="bg-white rounded-3xl shadow-2xl p-10 text-center w-full border-4 border-emerald-400">
+            <div class="mb-8">
+                <span class="text-6xl mb-4 block">🏆</span>
+                <h1 class="text-5xl font-black text-emerald-600 mb-2">Awesome Job!</h1>
+                <p id="complete-msg" class="text-xl text-slate-500 font-bold">You've mastered these shortcuts.</p>
+            </div>
+            <button onclick="showMenu()" class="px-8 py-4 bg-indigo-500 text-white text-2xl font-bold rounded-2xl border-b-8 border-indigo-700 hover:border-b-4 hover:translate-y-1 transition-all">
+                Play Again
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Data Structure for the Shortcuts (Updated with Shift combinations and styling shortcuts)
+        const shortcuts = [
+            { action: 'Copy', desc: 'Copies the selected text or item.', keys: ['ctrl', 'c'] },
+            { action: 'Paste', desc: 'Pastes what you copied.', keys: ['ctrl', 'v'] },
+            { action: 'Paste without formatting', desc: 'Pastes text without bringing over fonts or colors.', keys: ['ctrl', 'shift', 'v'] },
+            { action: 'Cut', desc: 'Removes selection and copies it.', keys: ['ctrl', 'x'] },
+            { action: 'Undo', desc: 'Undoes your last action.', keys: ['ctrl', 'z'] },
+            { action: 'Redo', desc: 'Redoes an action you undid.', keys: ['ctrl', 'shift', 'z'] },
+            { action: 'Select All', desc: 'Selects everything on the page or document.', keys: ['ctrl', 'a'] },
+            { action: 'Find', desc: 'Opens search to find a word on the page.', keys: ['ctrl', 'f'] },
+            { action: 'Print', desc: 'Opens the print menu.', keys: ['ctrl', 'p'] },
+            { action: 'Save', desc: 'Saves your current document.', keys: ['ctrl', 's'] },
+            { action: 'Bold', desc: 'Makes text bold.', keys: ['ctrl', 'b'] },
+            { action: 'Italics', desc: 'Italicizes text.', keys: ['ctrl', 'i'] },
+            { action: 'Underline', desc: 'Underlines text.', keys: ['ctrl', 'u'] },
+            { action: 'Center Align', desc: 'Centers text in a document or cell.', keys: ['ctrl', 'shift', 'e'] }
+        ];
+
+        // State Variables
+        let currentMode = 'menu';
+        let currentIndex = 0;
+        let score = 0;
+        let activeKeys = new Set();
+        let isTransitioning = false; 
+        let queue = [];
+
+        // Normalizes the key to lowercase so Shift + V simply reads as 'shift' and 'v'
+        function normalizeKey(e) {
+            let keyName = e.key.toLowerCase();
+            if (keyName === 'control' || keyName === 'meta') return 'ctrl';
+            if (keyName === ' ') return 'space'; 
+            return keyName;
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (currentMode === 'menu' || isTransitioning) return;
+
+            // PREVENT DEFAULT ACTIONS: Protects against Ctrl+P, Ctrl+S, etc.
+            if (e.ctrlKey || e.metaKey) {
+                const preventKeys = ['c','v','x','z','y','a','f','p','s','b','i','u','e'];
+                if (preventKeys.includes(e.key.toLowerCase())) {
+                    e.preventDefault();
+                }
+            }
+
+            const key = normalizeKey(e);
+            activeKeys.add(key);
+            
+            updateTrackerUI();
+            checkMatch();
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const key = normalizeKey(e);
+            activeKeys.delete(key);
+            updateTrackerUI();
+        });
+
+        // Safety: Clear keys if they click outside the game
+        window.addEventListener('blur', () => {
+            activeKeys.clear();
+            updateTrackerUI();
+        });
+
+        function updateTrackerUI() {
+            // Capitalize for display (e.g., 'ctrl' -> 'Ctrl')
+            const keysArray = Array.from(activeKeys).map(k => k.charAt(0).toUpperCase() + k.slice(1));
+            const displayText = keysArray.length > 0 ? keysArray.join(' + ') : 'None';
+            
+            if (currentMode === 'learn') {
+                const el = document.getElementById('learn-active-keys');
+                if (el) el.textContent = displayText;
+            } else if (currentMode === 'quiz') {
+                const el = document.getElementById('quiz-active-keys');
+                if (el) el.textContent = displayText;
+            }
+        }
+
+        function checkMatch() {
+            if (isTransitioning) return;
+
+            const targetShortcut = queue[currentIndex];
+            if (!targetShortcut) return;
+
+            // We only trigger success if they are holding exactly the correct number of keys
+            // and every required key is currently in the activeKeys set.
+            if (activeKeys.size === targetShortcut.keys.length) {
+                const allMatch = targetShortcut.keys.every(k => activeKeys.has(k));
+                if (allMatch) {
+                    handleSuccess();
+                }
+            }
+        }
+
+        function handleSuccess() {
+            isTransitioning = true;
+            
+            let cardEl, trackerEl, trackerTextId;
+
+            if (currentMode === 'learn') {
+                cardEl = document.getElementById('learn-card');
+                trackerEl = document.getElementById('learn-tracker');
+                trackerTextId = 'learn-active-keys';
+            } else {
+                cardEl = document.getElementById('quiz-card');
+                trackerEl = document.getElementById('quiz-tracker');
+                trackerTextId = 'quiz-active-keys';
+                score += 100;
+                document.getElementById('quiz-score').textContent = score;
+            }
+
+            // Success Animation & Styling
+            cardEl.classList.add('animate-success');
+            const originalTrackerClasses = trackerEl.className;
+            
+            trackerEl.className = 'bg-emerald-100 border-2 border-emerald-400 text-emerald-800 rounded-xl p-4 font-bold text-xl transition-colors';
+            trackerEl.innerHTML = '✨ Correct! Moving on...';
+
+            setTimeout(() => {
+                // Reset styles
+                cardEl.classList.remove('animate-success');
+                trackerEl.className = originalTrackerClasses;
+                trackerEl.innerHTML = `Currently pressing: <span id="${trackerTextId}" class="ml-2">None</span>`;
+                activeKeys.clear(); // Safely clear keys to prevent carry-over
+                
+                currentIndex++;
+                isTransitioning = false;
+                
+                if (currentIndex >= queue.length) {
+                    showComplete();
+                } else {
+                    renderCurrentStep();
+                }
+            }, 1000);
+        }
+
+        function hideAllViews() {
+            document.querySelectorAll('.view-container').forEach(el => el.classList.remove('active'));
+        }
+
+        function showMenu() {
+            hideAllViews();
+            document.getElementById('view-menu').classList.add('active');
+            currentMode = 'menu';
+            activeKeys.clear();
+        }
+
+        function startMode(mode) {
+            currentMode = mode;
+            currentIndex = 0;
+            score = 0;
+            activeKeys.clear();
+            
+            // Randomize array for quiz, keep ordered for learn
+            queue = [...shortcuts];
+            if (mode === 'quiz') {
+                queue.sort(() => Math.random() - 0.5);
+                document.getElementById('quiz-score').textContent = score;
+            }
+            
+            hideAllViews();
+            document.getElementById(`view-${mode}`).classList.add('active');
+            renderCurrentStep();
+        }
+
+        function renderCurrentStep() {
+            const data = queue[currentIndex];
+            
+            // Trigger pop animation for card transition
+            const cardId = currentMode === 'learn' ? 'learn-card' : 'quiz-card';
+            const card = document.getElementById(cardId);
+            card.classList.remove('animate-pop');
+            void card.offsetWidth; // Trigger reflow
+            card.classList.add('animate-pop');
+
+            if (currentMode === 'learn') {
+                document.getElementById('learn-progress').textContent = `${currentIndex + 1}/${queue.length}`;
+                document.getElementById('learn-action').textContent = data.action;
+                document.getElementById('learn-desc').textContent = data.desc;
+                
+                // Dynamically generate the keys for Learn Mode (e.g., [Ctrl] + [Shift] + [V])
+                const keysHtml = data.keys.map(k => {
+                    const display = k.charAt(0).toUpperCase() + k.slice(1);
+                    return `<div class="key-cap px-6 py-3 rounded-xl border-2 border-slate-300 text-slate-700 font-mono">${display}</div>`;
+                }).join('<span class="text-slate-400">+</span>');
+                document.getElementById('learn-keys-container').innerHTML = keysHtml;
+                
+                document.getElementById('learn-active-keys').textContent = 'None';
+            } else {
+                document.getElementById('quiz-action').textContent = data.action;
+                // Generate dynamic hint (❓ + ❓ + ❓ depending on length)
+                const hint = data.keys.map(() => '❓').join(' + ');
+                document.getElementById('quiz-keys-hint').textContent = hint;
+                document.getElementById('quiz-active-keys').textContent = 'None';
+            }
+        }
+
+        function showComplete() {
+            hideAllViews();
+            document.getElementById('view-complete').classList.add('active');
+            const msg = currentMode === 'quiz' 
+                ? `You scored ${score} points! You're a shortcut wizard.` 
+                : "Tutorial complete! You're ready for the Quiz Mode.";
+            document.getElementById('complete-msg').textContent = msg;
+            currentMode = 'menu';
+        }
+    </script>
+</body>
+</html>
