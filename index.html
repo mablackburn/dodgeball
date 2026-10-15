@@ -105,7 +105,10 @@
     <div id="view-quiz" class="view-container flex-col items-center w-full max-w-3xl">
         <div class="w-full flex justify-between items-center mb-6 text-white">
             <button onclick="showMenu()" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-xl font-bold backdrop-blur-sm transition-all">← Back to Menu</button>
-            <div class="text-xl font-bold bg-white/20 px-4 py-2 rounded-xl backdrop-blur-sm">Score: <span id="quiz-score" class="text-amber-300">0</span></div>
+            <div class="text-xl font-bold bg-white/20 px-4 py-2 rounded-xl backdrop-blur-sm flex gap-6">
+                <span>Time: <span id="quiz-timer" class="text-emerald-300">00:00</span></span>
+                <span>Score: <span id="quiz-score" class="text-amber-300">0</span></span>
+            </div>
         </div>
 
         <div id="quiz-card" class="bg-white rounded-3xl shadow-2xl p-8 w-full border-4 border-amber-400 relative text-center">
@@ -140,22 +143,29 @@
     </div>
 
     <script>
-        // Data Structure for the Shortcuts (Updated with Shift combinations and styling shortcuts)
+        // Data Structure for the Shortcuts (Updated with ChromeOS Specific List)
         const shortcuts = [
-            { action: 'Copy', desc: 'Copies the selected text or item.', keys: ['ctrl', 'c'] },
-            { action: 'Paste', desc: 'Pastes what you copied.', keys: ['ctrl', 'v'] },
-            { action: 'Paste without formatting', desc: 'Pastes text without bringing over fonts or colors.', keys: ['ctrl', 'shift', 'v'] },
-            { action: 'Cut', desc: 'Removes selection and copies it.', keys: ['ctrl', 'x'] },
-            { action: 'Undo', desc: 'Undoes your last action.', keys: ['ctrl', 'z'] },
-            { action: 'Redo', desc: 'Redoes an action you undid.', keys: ['ctrl', 'shift', 'z'] },
-            { action: 'Select All', desc: 'Selects everything on the page or document.', keys: ['ctrl', 'a'] },
-            { action: 'Find', desc: 'Opens search to find a word on the page.', keys: ['ctrl', 'f'] },
-            { action: 'Print', desc: 'Opens the print menu.', keys: ['ctrl', 'p'] },
-            { action: 'Save', desc: 'Saves your current document.', keys: ['ctrl', 's'] },
-            { action: 'Bold', desc: 'Makes text bold.', keys: ['ctrl', 'b'] },
-            { action: 'Italics', desc: 'Italicizes text.', keys: ['ctrl', 'i'] },
-            { action: 'Underline', desc: 'Underlines text.', keys: ['ctrl', 'u'] },
-            { action: 'Center Align', desc: 'Centers text in a document or cell.', keys: ['ctrl', 'shift', 'e'] }
+            // Page and Browser
+            { category: 'Page and Browser', action: 'Print the current page', desc: 'Opens the print dialog.', keys: ['ctrl', 'p'] },
+            { category: 'Page and Browser', action: 'Reload the current page', desc: 'Refreshes the page to get the latest content.', keys: ['ctrl', 'r'] },
+            { category: 'Page and Browser', action: 'Zoom in', desc: 'Makes everything on the page bigger.', keys: ['ctrl', '='] },
+            { category: 'Page and Browser', action: 'Zoom out', desc: 'Makes everything on the page smaller.', keys: ['ctrl', '-'] },
+            { category: 'Page and Browser', action: 'Reset zoom level', desc: 'Returns the page to the default 100% size.', keys: ['ctrl', '0'] },
+            { category: 'Page and Browser', action: 'Open Find bar', desc: 'Search for specific words on the current page.', keys: ['ctrl', 'f'] },
+            
+            // Text Editing
+            { category: 'Text Editing and Clipboard', action: 'Select everything', desc: 'Highlights all text or items on the page.', keys: ['ctrl', 'a'] },
+            { category: 'Text Editing and Clipboard', action: 'Copy', desc: 'Copies the selected text or item.', keys: ['ctrl', 'c'] },
+            { category: 'Text Editing and Clipboard', action: 'Paste', desc: 'Pastes what you copied.', keys: ['ctrl', 'v'] },
+            { category: 'Text Editing and Clipboard', action: 'Paste without formatting', desc: 'Pastes text without bringing over fonts or colors.', keys: ['ctrl', 'shift', 'v'] },
+            { category: 'Text Editing and Clipboard', action: 'Cut', desc: 'Removes selection and copies it.', keys: ['ctrl', 'x'] },
+            { category: 'Text Editing and Clipboard', action: 'Undo', desc: 'Undoes your last action.', keys: ['ctrl', 'z'] },
+            
+            // Screenshots and System
+            { category: 'Screenshots and System Controls', action: 'Take a full screenshot', desc: 'Captures a picture of your entire screen.', keys: ['ctrl', 'f5'] },
+            { category: 'Screenshots and System Controls', action: 'Take a partial screenshot', desc: 'Lets you click and drag to capture part of your screen.', keys: ['ctrl', 'shift', 'f5'] },
+            { category: 'Screenshots and System Controls', action: 'Turn Caps Lock on or off', desc: 'Toggles Caps Lock so you can type in all caps.', keys: ['meta', 'alt'] },
+            { category: 'Screenshots and System Controls', action: 'Open Emoji Picker', desc: 'Brings up the menu to insert emojis.', keys: ['meta', 'shift', 'space'] }
         ];
 
         // State Variables
@@ -165,22 +175,43 @@
         let activeKeys = new Set();
         let isTransitioning = false; 
         let queue = [];
+        let mistakeCount = 0;
+        let timeElapsed = 0;
+        let timerInterval = null;
 
-        // Normalizes the key to lowercase so Shift + V simply reads as 'shift' and 'v'
+        // Visual formatter for keys (Maps internal keys to Chromebook terminology)
+        function formatKeyDisplay(k) {
+            if (k === 'meta') return 'Search';
+            if (k === 'f5') return 'Show Windows';
+            if (k === 'escape') return 'Esc';
+            if (k === '=') return '+';
+            if (k === 'space') return 'Space';
+            if (['ctrl', 'alt', 'shift', 'tab'].includes(k)) {
+                return k.charAt(0).toUpperCase() + k.slice(1);
+            }
+            return k.toUpperCase();
+        }
+
+        // Normalizes the key to lowercase and handles specific Chromebook logic
         function normalizeKey(e) {
             let keyName = e.key.toLowerCase();
-            if (keyName === 'control' || keyName === 'meta') return 'ctrl';
+            if (keyName === 'control') return 'ctrl';
+            if (keyName === 'meta' || keyName === 'os') return 'meta'; // Search key on Chromebook
+            if (keyName === 'f5') return 'f5'; // Show Windows key usually maps to F5 natively
+            if (keyName === 'escape') return 'escape';
             if (keyName === ' ') return 'space'; 
+            if (keyName === '+') return '='; // Map '+' to '=' to normalize Shift + = combos
             return keyName;
         }
 
         window.addEventListener('keydown', (e) => {
-            if (currentMode === 'menu' || isTransitioning) return;
+            // Prevent repeating triggers if they hold the key down
+            if (currentMode === 'menu' || isTransitioning || e.repeat) return;
 
-            // PREVENT DEFAULT ACTIONS: Protects against Ctrl+P, Ctrl+S, etc.
-            if (e.ctrlKey || e.metaKey) {
-                const preventKeys = ['c','v','x','z','y','a','f','p','s','b','i','u','e'];
-                if (preventKeys.includes(e.key.toLowerCase())) {
+            // PREVENT DEFAULT ACTIONS for shortcuts we can block
+            if (e.ctrlKey || e.metaKey || e.altKey) {
+                const preventKeys = ['c','v','x','z','y','a','f','p','s','b','i','u','e','n','t','w','r','h','j','l','m','=','-','0'];
+                if (preventKeys.includes(e.key.toLowerCase()) || preventKeys.includes(normalizeKey(e))) {
                     e.preventDefault();
                 }
             }
@@ -188,6 +219,16 @@
             const key = normalizeKey(e);
             activeKeys.add(key);
             
+            // Mistake Tracking for Hints in Quiz mode
+            if (currentMode === 'quiz' && queue[currentIndex]) {
+                const targetShortcut = queue[currentIndex];
+                // If they pressed a key that is NOT part of the answer, it's a mistake!
+                if (!targetShortcut.keys.includes(key)) {
+                    mistakeCount++;
+                    updateQuizHint();
+                }
+            }
+
             updateTrackerUI();
             checkMatch();
         });
@@ -198,23 +239,39 @@
             updateTrackerUI();
         });
 
-        // Safety: Clear keys if they click outside the game
+        // Hack: Some Chromebook/Browser shortcuts cannot be prevented (e.g. Ctrl+T, Search+L).
+        // If the window loses focus while holding those keys, we give them credit when they come back!
         window.addEventListener('blur', () => {
+            if (isTransitioning) return;
+            
+            const targetShortcut = queue[currentIndex];
+            if (targetShortcut) {
+                const unpreventableKeys = ['t', 'n', 'w', 'tab', 'l', 'f5'];
+                const hasUnpreventable = targetShortcut.keys.some(k => unpreventableKeys.includes(k));
+                
+                // If the shortcut involves an unpreventable key and they had a modifier held when the blur happened
+                if (hasUnpreventable && (activeKeys.has('ctrl') || activeKeys.has('meta') || activeKeys.has('alt'))) {
+                    handleSuccess();
+                }
+            }
+
             activeKeys.clear();
             updateTrackerUI();
         });
 
         function updateTrackerUI() {
-            // Capitalize for display (e.g., 'ctrl' -> 'Ctrl')
-            const keysArray = Array.from(activeKeys).map(k => k.charAt(0).toUpperCase() + k.slice(1));
+            // Use our formatKeyDisplay so they see "Search" instead of "Meta"
+            const keysArray = Array.from(activeKeys).map(k => formatKeyDisplay(k));
             const displayText = keysArray.length > 0 ? keysArray.join(' + ') : 'None';
             
-            if (currentMode === 'learn') {
-                const el = document.getElementById('learn-active-keys');
-                if (el) el.textContent = displayText;
-            } else if (currentMode === 'quiz') {
-                const el = document.getElementById('quiz-active-keys');
-                if (el) el.textContent = displayText;
+            const learnEl = document.getElementById('learn-active-keys');
+            if (currentMode === 'learn' && learnEl) {
+                learnEl.textContent = displayText;
+            } 
+            
+            const quizEl = document.getElementById('quiz-active-keys');
+            if (currentMode === 'quiz' && quizEl) {
+                quizEl.textContent = displayText;
             }
         }
 
@@ -224,8 +281,7 @@
             const targetShortcut = queue[currentIndex];
             if (!targetShortcut) return;
 
-            // We only trigger success if they are holding exactly the correct number of keys
-            // and every required key is currently in the activeKeys set.
+            // Trigger success if they hold exact number of keys and all required keys are pressed
             if (activeKeys.size === targetShortcut.keys.length) {
                 const allMatch = targetShortcut.keys.every(k => activeKeys.has(k));
                 if (allMatch) {
@@ -247,7 +303,11 @@
                 cardEl = document.getElementById('quiz-card');
                 trackerEl = document.getElementById('quiz-tracker');
                 trackerTextId = 'quiz-active-keys';
-                score += 100;
+                
+                // Calculate points: Max 100, deduct 25 for each mistake, minimum 25 pts for getting it eventually
+                let points = 100 - (mistakeCount * 25);
+                if (points < 25) points = 25;
+                score += points;
                 document.getElementById('quiz-score').textContent = score;
             }
 
@@ -259,11 +319,11 @@
             trackerEl.innerHTML = '✨ Correct! Moving on...';
 
             setTimeout(() => {
-                // Reset styles
+                // Reset styles - with safety checks to avoid crashing if elements changed
                 cardEl.classList.remove('animate-success');
                 trackerEl.className = originalTrackerClasses;
                 trackerEl.innerHTML = `Currently pressing: <span id="${trackerTextId}" class="ml-2">None</span>`;
-                activeKeys.clear(); // Safely clear keys to prevent carry-over
+                activeKeys.clear(); 
                 
                 currentIndex++;
                 isTransitioning = false;
@@ -285,12 +345,30 @@
             document.getElementById('view-menu').classList.add('active');
             currentMode = 'menu';
             activeKeys.clear();
+            stopTimer();
+        }
+
+        function startTimer() {
+            stopTimer();
+            timeElapsed = 0;
+            document.getElementById('quiz-timer').textContent = "00:00";
+            timerInterval = setInterval(() => {
+                timeElapsed++;
+                const mins = String(Math.floor(timeElapsed / 60)).padStart(2, '0');
+                const secs = String(timeElapsed % 60).padStart(2, '0');
+                document.getElementById('quiz-timer').textContent = `${mins}:${secs}`;
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (timerInterval) clearInterval(timerInterval);
         }
 
         function startMode(mode) {
             currentMode = mode;
             currentIndex = 0;
             score = 0;
+            mistakeCount = 0;
             activeKeys.clear();
             
             // Randomize array for quiz, keep ordered for learn
@@ -298,6 +376,9 @@
             if (mode === 'quiz') {
                 queue.sort(() => Math.random() - 0.5);
                 document.getElementById('quiz-score').textContent = score;
+                startTimer();
+            } else {
+                stopTimer();
             }
             
             hideAllViews();
@@ -305,44 +386,70 @@
             renderCurrentStep();
         }
 
+        function updateQuizHint() {
+            if (currentMode !== 'quiz' || !queue[currentIndex]) return;
+            const data = queue[currentIndex];
+            
+            // Reveal keys sequentially based on mistakeCount
+            const hint = data.keys.map((k, idx) => {
+                if (idx < mistakeCount) {
+                    return formatKeyDisplay(k);
+                }
+                return '❓';
+            }).join(' + ');
+            
+            document.getElementById('quiz-keys-hint').textContent = hint;
+        }
+
         function renderCurrentStep() {
+            mistakeCount = 0; // Reset mistakes for the new step
             const data = queue[currentIndex];
             
             // Trigger pop animation for card transition
             const cardId = currentMode === 'learn' ? 'learn-card' : 'quiz-card';
             const card = document.getElementById(cardId);
-            card.classList.remove('animate-pop');
-            void card.offsetWidth; // Trigger reflow
-            card.classList.add('animate-pop');
+            if (card) {
+                card.classList.remove('animate-pop');
+                void card.offsetWidth; // Trigger reflow
+                card.classList.add('animate-pop');
+            }
 
             if (currentMode === 'learn') {
                 document.getElementById('learn-progress').textContent = `${currentIndex + 1}/${queue.length}`;
                 document.getElementById('learn-action').textContent = data.action;
                 document.getElementById('learn-desc').textContent = data.desc;
                 
-                // Dynamically generate the keys for Learn Mode (e.g., [Ctrl] + [Shift] + [V])
+                // Dynamically generate the keys using the format display
                 const keysHtml = data.keys.map(k => {
-                    const display = k.charAt(0).toUpperCase() + k.slice(1);
-                    return `<div class="key-cap px-6 py-3 rounded-xl border-2 border-slate-300 text-slate-700 font-mono">${display}</div>`;
+                    return `<div class="key-cap px-6 py-3 rounded-xl border-2 border-slate-300 text-slate-700 font-mono">${formatKeyDisplay(k)}</div>`;
                 }).join('<span class="text-slate-400">+</span>');
                 document.getElementById('learn-keys-container').innerHTML = keysHtml;
                 
-                document.getElementById('learn-active-keys').textContent = 'None';
+                const learnEl = document.getElementById('learn-active-keys');
+                if (learnEl) learnEl.textContent = 'None';
             } else {
                 document.getElementById('quiz-action').textContent = data.action;
-                // Generate dynamic hint (❓ + ❓ + ❓ depending on length)
-                const hint = data.keys.map(() => '❓').join(' + ');
-                document.getElementById('quiz-keys-hint').textContent = hint;
-                document.getElementById('quiz-active-keys').textContent = 'None';
+                updateQuizHint();
+                
+                const quizEl = document.getElementById('quiz-active-keys');
+                if (quizEl) quizEl.textContent = 'None';
             }
         }
 
         function showComplete() {
             hideAllViews();
+            stopTimer();
             document.getElementById('view-complete').classList.add('active');
-            const msg = currentMode === 'quiz' 
-                ? `You scored ${score} points! You're a shortcut wizard.` 
-                : "Tutorial complete! You're ready for the Quiz Mode.";
+            
+            let msg;
+            if (currentMode === 'quiz') {
+                const mins = String(Math.floor(timeElapsed / 60)).padStart(2, '0');
+                const secs = String(timeElapsed % 60).padStart(2, '0');
+                msg = `You scored ${score} points in ${mins}:${secs}! You're a Chromebook shortcut wizard.`;
+            } else {
+                msg = "Tutorial complete! You're ready for the Quiz Mode.";
+            }
+            
             document.getElementById('complete-msg').textContent = msg;
             currentMode = 'menu';
         }
